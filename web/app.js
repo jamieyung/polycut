@@ -1,3 +1,4 @@
+// TODO have radio button choice for which property is controlled by x/y
 // TODO control poly
 // TODO change poly colour based on cur settings
 // TODO set poly colour
@@ -22,6 +23,8 @@ const MODE = {
 }
 const RATIO_MIN = 0.01
 const RATIO_MAX = 1
+const LIGHTNESS_DELTA_MIN = -0.1
+const LIGHTNESS_DELTA_MAX = 0.1
 const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
 
@@ -38,10 +41,13 @@ let polygons
 // settings ui elements
 let ratio_slider_el
 let ratio_number_el
+let lightness_delta_slider_el
+let lightness_delta_number_el
 
 // settings
 let mode
 let ratio
+let lightness_delta
 let n_splits_per_tick
 
 // ============================================================================
@@ -57,6 +63,29 @@ function main() {
   canvas_container_el = document.getElementById("canvas_container")
   canvas_container_el.appendChild(app.view)
 
+  init_listeners()
+
+  pointer_is_down = false
+
+  px = 0
+  py = 0
+  px_pct = 0
+  py_pct = 0
+
+  g = new PIXI.Graphics()
+  app.stage.addChild(g)
+
+  polygons = []
+
+  init_ui_elements()
+
+  resize()
+  reset()
+
+  app.ticker.add(tick)
+}
+
+function init_listeners() {
   canvas_container_el.addEventListener("mousedown", function(e) {
     handle_pointer_down(e.clientX, e.clientY)
   }, true)
@@ -78,33 +107,22 @@ function main() {
     if (e.changedTouches.length === 0) return
     handle_pointer_up(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
   }, true)
-
-  pointer_is_down = false
-
-  px = 0
-  py = 0
-  px_pct = 0
-  py_pct = 0
-
-  g = new PIXI.Graphics()
-  app.stage.addChild(g)
-
-  // init ui elements
-  ratio_slider_el = document.getElementById("ratio_slider")
-  ratio_slider_el.min = RATIO_MIN
-  ratio_slider_el.max = RATIO_MAX
-  ratio_slider_el.step = (RATIO_MIN + (RATIO_MAX-RATIO_MIN)) / 20
-
-  ratio_number_el = document.getElementById("ratio_number")
-  ratio_number_el.min = RATIO_MIN
-  ratio_number_el.max = RATIO_MAX
-  ratio_number_el.step = (RATIO_MIN + (RATIO_MAX-RATIO_MIN)) / 20
-
   window.onresize = resize
-  resize()
-  reset()
+}
 
-  app.ticker.add(tick)
+function init_ui_elements() {
+  ratio_slider_el = init_el("ratio_slider", RATIO_MIN, RATIO_MAX, 20)
+  ratio_number_el = init_el("ratio_number", RATIO_MIN, RATIO_MAX, 20)
+  lightness_delta_slider_el = init_el("lightness_delta_slider", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 20)
+  lightness_delta_number_el = init_el("lightness_delta_number", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 20)
+}
+
+function init_el(id, min, max, steps) {
+  const el = document.getElementById(id)
+  el.min = min
+  el.max = max
+  el.step = (min + (max-min))/steps
+  return el
 }
 
 function resize() {
@@ -117,6 +135,7 @@ function resize() {
 function reset() {
   mode = MODE.CONTROL_SETTINGS
   ratio = lerp(RATIO_MIN, RATIO_MAX, 0.5)
+  lightness_delta = lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5)
   n_splits_per_tick = N_SPLITS_PER_TICK_MIN
 
   const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
@@ -142,10 +161,12 @@ function update_settings_based_on_pointer_pos(x, y) {
     const canvas_screen_dim = (rect.width/DIM)*DIM
     px = x - rect.x
     py = y - rect.y
-    px_pct = px/canvas_screen_dim
-    py_pct = py/canvas_screen_dim
-    if (mode != MODE.CONTROL_SETTINGS) return
-    ratio = clamp(RATIO_MIN, RATIO_MAX, 1 - py_pct)
+    px_pct = clamp(0, 1, px/canvas_screen_dim)
+    py_pct = clamp(0, 1, py/canvas_screen_dim)
+    if (mode == MODE.CONTROL_SETTINGS) {
+      ratio = lerp(RATIO_MIN, RATIO_MAX, 1 - py_pct)
+      lightness_delta = lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, px_pct)
+    }
 }
 
 function tick() {
@@ -153,6 +174,8 @@ function tick() {
 
   ratio_slider_el.value = ratio
   ratio_number_el.value = ratio
+  lightness_delta_slider_el.value = lightness_delta
+  lightness_delta_number_el.value = lightness_delta
 
   for (let i = 0; i < polygons.length; i++) {
     const poly = polygons[i]
@@ -235,8 +258,8 @@ function split_poly(poly_idx) {
   }
 
   // TODO color
-  const s = 0.3
-  const l = 0.3
+  const s = 1
+  const l = clamp(0, 1, poly.l + lightness_delta)
   const p1 = mk_poly(p1_verts, Math.random(), s, l)
   const p2 = mk_poly(p2_verts, Math.random(), s, l)
   polygons.splice(poly_idx, 1)
