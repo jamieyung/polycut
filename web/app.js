@@ -20,52 +20,61 @@ const MODE = {
   CHANGE_POLY_COLOUR: 2,
   DELETE_POLY: 3,
 }
+const RATIO_MIN = 0.01
+const RATIO_MAX = 1
+const N_SPLITS_PER_TICK_MIN = 1
+const N_SPLITS_PER_TICK_MAX = 50
 
-let resolution
 let app
+let canvas_container_el
 let pointer_is_down
-let px
-let py
-let g
+let px // pointer x relative to top left corner of canvas
+let py // pointer y relative to top left corner of canvas
+let px_pct // pointer x as frac of DIM
+let py_pct // pointer y as frac of DIM
+let g // graphics
+let polygons
+
+// settings ui elements
+let ratio_slider_el
+let ratio_number_el
 
 // settings
 let mode
 let ratio
-let polygons
 let n_splits_per_tick
 
 // ============================================================================
 
 function main() {
-  resolution = window.devicePixelRatio || 1
   app = new PIXI.Application({
     width: DIM,
     height: DIM,
     backgroundColor: 0xffffff,
-    resolution: resolution*2,
+    resolution: 1*(window.devicePixelRatio || 1),
     antialias: true
   })
-  document.body.appendChild(app.view)
-  app.view.style.width = DIM + "px"
+  canvas_container_el = document.getElementById("canvas_container")
+  canvas_container_el.appendChild(app.view)
 
-  document.body.addEventListener("mousedown", function(e) {
+  canvas_container_el.addEventListener("mousedown", function(e) {
     handle_pointer_down(e.clientX, e.clientY)
   }, true)
-  document.body.addEventListener("mousemove", function(e) {
+  canvas_container_el.addEventListener("mousemove", function(e) {
     handle_pointer_move(e.clientX, e.clientY)
   }, true)
-  document.body.addEventListener("mouseup", function(e) {
+  canvas_container_el.addEventListener("mouseup", function(e) {
     handle_pointer_up(e.clientX, e.clientY)
   }, true)
-  document.body.addEventListener("touchstart", function(e) {
+  canvas_container_el.addEventListener("touchstart", function(e) {
     if (e.changedTouches.length === 0) return
     handle_pointer_down(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
   }, true)
-  document.body.addEventListener("touchmove", function(e) {
+  canvas_container_el.addEventListener("touchmove", function(e) {
     if (e.changedTouches.length === 0) return
     handle_pointer_move(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
   }, true)
-  document.body.addEventListener("touchend", function(e) {
+  canvas_container_el.addEventListener("touchend", function(e) {
     if (e.changedTouches.length === 0) return
     handle_pointer_up(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
   }, true)
@@ -74,55 +83,76 @@ function main() {
 
   px = 0
   py = 0
+  px_pct = 0
+  py_pct = 0
 
   g = new PIXI.Graphics()
   app.stage.addChild(g)
 
+  // init ui elements
+  ratio_slider_el = document.getElementById("ratio_slider")
+  ratio_slider_el.min = RATIO_MIN
+  ratio_slider_el.max = RATIO_MAX
+  ratio_slider_el.step = (RATIO_MIN + (RATIO_MAX-RATIO_MIN)) / 20
+
+  ratio_number_el = document.getElementById("ratio_number")
+  ratio_number_el.min = RATIO_MIN
+  ratio_number_el.max = RATIO_MAX
+  ratio_number_el.step = (RATIO_MIN + (RATIO_MAX-RATIO_MIN)) / 20
+
+  window.onresize = resize
+  resize()
   reset()
 
   app.ticker.add(tick)
 }
 
+function resize() {
+  const rect = canvas_container_el.getBoundingClientRect()
+  const canvas_len = 0.9*Math.min(rect.width, rect.height) + "px"
+  app.view.style["max-width"] = canvas_len
+  app.view.style["max-height"] = canvas_len
+}
+
 function reset() {
   mode = MODE.CONTROL_SETTINGS
-  ratio = 0.8
-  n_splits_per_tick = 1
+  ratio = lerp(RATIO_MIN, RATIO_MAX, 0.5)
+  n_splits_per_tick = N_SPLITS_PER_TICK_MIN
 
   const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
   polygons = [first_poly]
 }
 
-function update_settings_based_on_pointer_pos() {
-    if (mode != MODE.CONTROL_SETTINGS) return
-    ratio = clamp(0, 1, 1.0 - py/DIM)
-}
-
 function handle_pointer_down(x, y) {
   pointer_is_down = true
-  const rect = app.view.getBoundingClientRect()
-  px = x - rect.x
-  py = y - rect.y
-  update_settings_based_on_pointer_pos()
+  update_settings_based_on_pointer_pos(x, y)
 }
 
 function handle_pointer_move(x, y) {
-  const rect = app.view.getBoundingClientRect()
-  px = x - rect.x
-  py = y - rect.y
-  update_settings_based_on_pointer_pos()
+  update_settings_based_on_pointer_pos(x, y)
 }
 
 function handle_pointer_up(x, y) {
   pointer_is_down = false
-  const rect = app.view.getBoundingClientRect()
-  px = x - rect.x
-  py = y - rect.y
+  update_settings_based_on_pointer_pos(x, y)
+}
+
+function update_settings_based_on_pointer_pos(x, y) {
+    const rect = app.view.getBoundingClientRect()
+    const canvas_screen_dim = (rect.width/DIM)*DIM
+    px = x - rect.x
+    py = y - rect.y
+    px_pct = px/canvas_screen_dim
+    py_pct = py/canvas_screen_dim
+    if (mode != MODE.CONTROL_SETTINGS) return
+    ratio = clamp(RATIO_MIN, RATIO_MAX, 1 - py_pct)
 }
 
 function tick() {
   g.clear()
 
-  document.getElementById("banner").innerHTML = `ratio: ${ratio}`
+  ratio_slider_el.value = ratio
+  ratio_number_el.value = ratio
 
   for (let i = 0; i < polygons.length; i++) {
     const poly = polygons[i]
@@ -136,7 +166,7 @@ function tick() {
       split_poly(-1)
     }
     g.beginFill(0)
-    g.drawRect(px - 10, py - 10, 20, 20)
+    g.drawRect(px_pct*DIM, py_pct*DIM, 20, 20)
     g.endFill()
   }
 }
