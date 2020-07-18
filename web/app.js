@@ -8,7 +8,6 @@
 // TODO delete poly
 // TODO undo/redo?
 // TODO save replay
-// TODO mode to split poly under pointer
 // TODO mode to make split with pointer start/end pos
 
 // CONSTANTS ==================================================================
@@ -25,7 +24,7 @@ const MODE = {
 }
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
-const RATIO_STEP = 0.05
+const RATIO_STEP = 0.01
 const HUE_DELTA_MIN = -0.1
 const HUE_DELTA_MAX = 0.1
 const HUE_DELTA_STEP = 0.001
@@ -42,8 +41,6 @@ let app
 let canvas_container_el
 let control_panel_el
 let pointer_is_down // true if mouse/touch is down
-let px // pointer x relative to top left corner of canvas
-let py // pointer y relative to top left corner of canvas
 let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let g // graphics
@@ -68,8 +65,6 @@ function main() {
 
   pointer_is_down = false
 
-  px = 0
-  py = 0
   px_pct = 0
   py_pct = 0
 
@@ -129,10 +124,13 @@ function tick() {
     } else if (mode === MODE.SPLIT_POLY_AT_POINTER) {
       const n = settings.n_splits_per_tick.get_value()
       for (let i = 0; i < n; i++) {
-        split_poly(get_poly_at_pointer())
+        const idx = get_poly_at_pointer()
+        if (idx !== -1) split_poly(idx)
       }
     } else if (mode === MODE.CHANGE_POLY_COLOUR_AT_POINTER) {
     } else if (mode === MODE.DELETE_POLY_AT_POINTER) {
+      const idx = get_poly_at_pointer()
+      if (idx !== -1) polygons.splice(idx, 1)
     }
   }
 }
@@ -141,7 +139,7 @@ function get_poly_at_pointer() {
   const n_polys = polygons.length
   for (let i = 0; i < n_polys; i++) {
     const poly = polygons[i]
-    if (pt_inside_poly(poly.verts, px, py)) return i
+    if (pt_inside_poly(poly.verts, DIM*px_pct, DIM*py_pct)) return i
   }
   return -1
 }
@@ -184,6 +182,18 @@ function init_control_panel() {
     n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP)
   }
 
+  control_panel_el.appendChild(settings.mode.el)
+
+  control_panel_el.appendChild(settings.ratio.el)
+
+  control_panel_el.appendChild(settings.hue_delta.el)
+  settings.hue_delta.el.appendChild(mk_button_el("Invert", () => settings.hue_delta.set_value(-1 * settings.hue_delta.get_value())))
+
+  control_panel_el.appendChild(settings.lightness_delta.el)
+  settings.lightness_delta.el.appendChild(mk_button_el("Invert", () => settings.lightness_delta.set_value(-1 * settings.lightness_delta.get_value())))
+
+  control_panel_el.appendChild(settings.n_splits_per_tick.el)
+
   control_panel_el.appendChild(mk_button_el("Reset canvas", reset_canvas))
 }
 
@@ -191,17 +201,19 @@ function mk_number_param(label, min, max, initial_val, step_size) {
   let val = initial_val
 
   const parent_el = document.createElement("div")
-  control_panel_el.appendChild(parent_el)
 
-  const label_el = document.createElement("b")
+  const label_el = document.createElement("h4")
   label_el.innerHTML = label
   parent_el.appendChild(label_el)
 
+  const asdf = document.createElement("div")
+  parent_el.appendChild(asdf)
+
   const slider_el = mk_slider_el(min, max, step_size)
-  parent_el.appendChild(slider_el)
+  asdf.appendChild(slider_el)
 
   const number_input_el = mk_number_input_el(min, max, step_size)
-  parent_el.appendChild(number_input_el)
+  asdf.appendChild(number_input_el)
 
   function onchange(v) {
     val = parseFloat(v)
@@ -215,7 +227,8 @@ function mk_number_param(label, min, max, initial_val, step_size) {
 
   const ret = {
     get_value: () => val,
-    set_value: onchange
+    set_value: onchange,
+    el: parent_el
   }
   return ret
 }
@@ -225,9 +238,8 @@ function mk_radio_param(label, options, initial_val) {
   let val = initial_val
 
   const parent_el = document.createElement("div")
-  control_panel_el.appendChild(parent_el)
 
-  const label_el = document.createElement("b")
+  const label_el = document.createElement("h4")
   label_el.innerHTML = label
   parent_el.appendChild(label_el)
 
@@ -268,7 +280,8 @@ function mk_radio_param(label, options, initial_val) {
 
   const ret = {
     get_value: () => val,
-    set_value: onchange
+    set_value: onchange,
+    el: parent_el
   }
 
   return ret
@@ -344,10 +357,8 @@ function handle_pointer_up(x, y) {
 function update_settings_based_on_pointer_pos(x, y) {
     const rect = app.view.getBoundingClientRect()
     const canvas_screen_dim = (rect.width/DIM)*DIM
-    px = x - rect.x
-    py = y - rect.y
-    px_pct = clamp(0, 1, px/canvas_screen_dim)
-    py_pct = clamp(0, 1, py/canvas_screen_dim)
+    px_pct = clamp(0, 1, (x - rect.x)/canvas_screen_dim)
+    py_pct = clamp(0, 1, (y - rect.y)/canvas_screen_dim)
     if (settings.mode.get_value() == MODE.CONTROL_SETTINGS) {
       settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 1 - py_pct))
       settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, px_pct))
