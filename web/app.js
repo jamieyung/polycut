@@ -1,3 +1,5 @@
+// TODOS ======================================================================
+
 // TODO kbd shortcuts
 // TODO have radio button choice for which property is controlled by x/y
 // TODO change poly colour based on cur settings
@@ -9,16 +11,17 @@
 // TODO mode to split poly under pointer
 // TODO mode to make split with pointer start/end pos
 
-// constants
+// CONSTANTS ==================================================================
+
 const DIM = 800
 const DIM_2 = DIM/2
 const TWO_PI = Math.PI*2
 const MODE = {
   DEFAULT: 0,
   CONTROL_SETTINGS: 1,
-  CONTROL_POLY: 2,
-  CHANGE_POLY_COLOUR: 3,
-  DELETE_POLY: 4,
+  SPLIT_POLY_AT_POINTER: 2,
+  CHANGE_POLY_COLOUR_AT_POINTER: 3,
+  DELETE_POLY_AT_POINTER: 4,
 }
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
@@ -33,17 +36,18 @@ const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
 const N_SPLITS_PER_TICK_STEP = 1
 
+// VARIABLES ==================================================================
+
 let app
 let canvas_container_el
 let control_panel_el
-let pointer_is_down
+let pointer_is_down // true if mouse/touch is down
 let px // pointer x relative to top left corner of canvas
 let py // pointer y relative to top left corner of canvas
 let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let g // graphics
 let polygons
-
 let settings
 
 // SETUP ======================================================================
@@ -74,7 +78,7 @@ function main() {
 
   polygons = []
 
-  init_settings()
+  init_control_panel()
 
   resize()
   reset()
@@ -90,13 +94,17 @@ function resize() {
 }
 
 function reset() {
-  settings.mode.set_value(MODE.DEFAULT)
+  settings.mode.set_value(MODE.SPLIT_POLY_AT_POINTER)
   settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.5))
   settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5))
-  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5))
+  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.75))
   settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
 
-  const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
+  reset_canvas()
+}
+
+function reset_canvas() {
+  const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.8, 0.2)
   polygons = [first_poly]
 }
 
@@ -113,31 +121,70 @@ function tick() {
   }
 
   if (pointer_is_down) {
-    for (let i = 0; i < settings.n_splits_per_tick.get_value(); i++) {
-      split_poly(-1)
+    const mode = settings.mode.get_value()
+    if (mode === MODE.DEFAULT) {
+      split_n_polys()
+    } else if (mode === MODE.CONTROL_SETTINGS) {
+      split_n_polys()
+    } else if (mode === MODE.SPLIT_POLY_AT_POINTER) {
+      const n = settings.n_splits_per_tick.get_value()
+      for (let i = 0; i < n; i++) {
+        split_poly(get_poly_at_pointer())
+      }
+    } else if (mode === MODE.CHANGE_POLY_COLOUR_AT_POINTER) {
+    } else if (mode === MODE.DELETE_POLY_AT_POINTER) {
     }
-    g.beginFill(0)
-    g.drawRect(px_pct*DIM, py_pct*DIM, 20, 20)
-    g.endFill()
+  }
+}
+
+function get_poly_at_pointer() {
+  const n_polys = polygons.length
+  for (let i = 0; i < n_polys; i++) {
+    const poly = polygons[i]
+    if (pt_inside_poly(poly.verts, px, py)) return i
+  }
+  return -1
+}
+
+function pt_inside_poly(verts, x, y) {
+  const n_verts = verts.length;
+  let i, j
+  let c = false
+
+  for(i = 0, j = n_verts - 1; i < n_verts; j = i++) {
+    if(((verts[i].y >= y ) != (verts[j].y >= y)) &&
+        (x <= (verts[j].x - verts[i].x) * (y - verts[i].y) / (verts[j].y - verts[i].y) + verts[i].x)
+      )
+        c = !c
+  }
+  return c
+}
+
+function split_n_polys() {
+  const n = settings.n_splits_per_tick.get_value()
+  for (let i = 0; i < n; i++) {
+    split_poly(-1)
   }
 }
 
 // UI STUFF ===================================================================
 
-function init_settings() {
+function init_control_panel() {
   settings = {
     mode: mk_radio_param("Mode:", [
       { value: MODE.DEFAULT, label: "Mouse/touch position doesn't do anything special" },
       { value: MODE.CONTROL_SETTINGS, label: "Control settings with mouse/touch position" },
-      { value: MODE.CONTROL_POLY, label: "Split poly at mouse/touch position" },
-      { value: MODE.CHANGE_POLY_COLOUR, label: "Change poly colour at mouse/touch position" },
-      { value: MODE.DELETE_POLY, label: "Delete poly at mouse/touch position" },
+      { value: MODE.SPLIT_POLY_AT_POINTER, label: "Split poly at mouse/touch position" },
+      { value: MODE.CHANGE_POLY_COLOUR_AT_POINTER, label: "Change poly colour at mouse/touch position" },
+      { value: MODE.DELETE_POLY_AT_POINTER, label: "Delete poly at mouse/touch position" },
     ], MODE.DEFAULT),
     ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
     hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
     lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
     n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP)
   }
+
+  control_panel_el.appendChild(mk_button_el("Reset canvas", reset_canvas))
 }
 
 function mk_number_param(label, min, max, initial_val, step_size) {
@@ -227,6 +274,13 @@ function mk_radio_param(label, options, initial_val) {
   return ret
 }
 
+function mk_button_el(label, onclick) {
+  const el = document.createElement("button")
+  el.innerHTML = label
+  el.onclick = onclick
+  return el
+}
+
 function mk_slider_el(min, max, step_size) {
   const el = document.createElement("input")
   el.type = "range"
@@ -304,7 +358,7 @@ function update_settings_based_on_pointer_pos(x, y) {
 
 // if poly_idx is out of range, ignores it and uses the largest poly.
 function split_poly(poly_idx) {
-  n_polys = polygons.length
+  const n_polys = polygons.length
   if (n_polys === 0) return
   if (poly_idx < 0 || poly_idx >= n_polys) poly_idx = n_polys - 1 // largest one
   const poly = polygons[poly_idx]
