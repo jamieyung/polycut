@@ -21,15 +21,16 @@ const MODE = {
   CHANGE_POLY_COLOUR: 2,
   DELETE_POLY: 3,
 }
-const RATIO_MIN = 0.01
+const RATIO_MIN = 0.05
 const RATIO_MAX = 1
-const LIGHTNESS_DELTA_MIN = -0.1
-const LIGHTNESS_DELTA_MAX = 0.1
+const LIGHTNESS_DELTA_MIN = -0.01
+const LIGHTNESS_DELTA_MAX = 0.01
 const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
 
 let app
 let canvas_container_el
+let control_panel_el
 let pointer_is_down
 let px // pointer x relative to top left corner of canvas
 let py // pointer y relative to top left corner of canvas
@@ -38,19 +39,9 @@ let py_pct // pointer y as frac of DIM
 let g // graphics
 let polygons
 
-// settings ui elements
-let ratio_slider_el
-let ratio_number_el
-let lightness_delta_slider_el
-let lightness_delta_number_el
+let settings
 
-// settings
-let mode
-let ratio
-let lightness_delta
-let n_splits_per_tick
-
-// ============================================================================
+// SETUP ======================================================================
 
 function main() {
   app = new PIXI.Application({
@@ -62,6 +53,7 @@ function main() {
   })
   canvas_container_el = document.getElementById("canvas_container")
   canvas_container_el.appendChild(app.view)
+  control_panel_el = document.getElementById("control_panel")
 
   init_listeners()
 
@@ -77,13 +69,123 @@ function main() {
 
   polygons = []
 
-  init_ui_elements()
+  init_settings()
 
   resize()
   reset()
 
   app.ticker.add(tick)
 }
+
+function resize() {
+  const rect = canvas_container_el.getBoundingClientRect()
+  const canvas_len = 0.9*Math.min(rect.width, rect.height) + "px"
+  app.view.style["max-width"] = canvas_len
+  app.view.style["max-height"] = canvas_len
+}
+
+function reset() {
+  settings.mode = MODE.CONTROL_SETTINGS
+  settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.5))
+  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5))
+  settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
+
+  const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
+  polygons = [first_poly]
+}
+
+// TICK =======================================================================
+
+function tick() {
+  g.clear()
+
+  for (let i = 0; i < polygons.length; i++) {
+    const poly = polygons[i]
+    g.beginFill(poly.hex)
+    g.drawPolygon(poly.verts)
+    g.endFill()
+  }
+
+  if (pointer_is_down) {
+    for (let i = 0; i < settings.n_splits_per_tick.get_value(); i++) {
+      split_poly(-1)
+    }
+    g.beginFill(0)
+    g.drawRect(px_pct*DIM, py_pct*DIM, 20, 20)
+    g.endFill()
+  }
+}
+
+// UI STUFF ===================================================================
+
+function init_settings() {
+  settings = {
+    mode: MODE.CONTROL_SETTINGS,
+    ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, 0.05),
+    lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, 0.0001),
+    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, 1)
+  }
+}
+
+function mk_number_param(label, min, max, initial_val, step_size) {
+  let val = initial_val
+
+  const parent_el = document.createElement("div")
+  control_panel_el.appendChild(parent_el)
+
+  const label_el = document.createElement("b")
+  label_el.innerHTML = label
+  parent_el.appendChild(label_el)
+
+  const slider_el = mk_slider_el(min, max, step_size)
+  parent_el.appendChild(slider_el)
+
+  const number_input_el = mk_number_input_el(min, max, step_size)
+  parent_el.appendChild(number_input_el)
+
+  function onchange (v) {
+    val = v
+    slider_el.value = v
+    number_input_el.value = v
+  }
+  slider_el.oninput = () => onchange(slider_el.value)
+  slider_el.onchange = () => onchange(slider_el.value)
+  number_input_el.oninput = () => onchange(number_input_el.value)
+  number_input_el.onchange = () => onchange(number_input_el.value)
+
+  const ret = {
+    get_value: () => {
+      return val
+    },
+    set_value: (v) => {
+      val = v
+      slider_el.value = v
+      number_input_el.value = v
+    }
+  }
+  return ret
+}
+
+function mk_slider_el(min, max, step_size) {
+  const el = document.createElement("input")
+  el.type = "range"
+  el.class = "slider"
+  el.min = min
+  el.max = max
+  el.step = step_size
+  return el
+}
+
+function mk_number_input_el(min, max, step_size) {
+  const el = document.createElement("input")
+  el.type = "number"
+  el.min = min
+  el.max = max
+  el.step = step_size
+  return el
+}
+
+// INTERACTION HANDLERS =======================================================
 
 function init_listeners() {
   canvas_container_el.addEventListener("mousedown", function(e) {
@@ -110,38 +212,6 @@ function init_listeners() {
   window.onresize = resize
 }
 
-function init_ui_elements() {
-  ratio_slider_el = init_el("ratio_slider", RATIO_MIN, RATIO_MAX, 20)
-  ratio_number_el = init_el("ratio_number", RATIO_MIN, RATIO_MAX, 20)
-  lightness_delta_slider_el = init_el("lightness_delta_slider", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 20)
-  lightness_delta_number_el = init_el("lightness_delta_number", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 20)
-}
-
-function init_el(id, min, max, steps) {
-  const el = document.getElementById(id)
-  el.min = min
-  el.max = max
-  el.step = (min + (max-min))/steps
-  return el
-}
-
-function resize() {
-  const rect = canvas_container_el.getBoundingClientRect()
-  const canvas_len = 0.9*Math.min(rect.width, rect.height) + "px"
-  app.view.style["max-width"] = canvas_len
-  app.view.style["max-height"] = canvas_len
-}
-
-function reset() {
-  mode = MODE.CONTROL_SETTINGS
-  ratio = lerp(RATIO_MIN, RATIO_MAX, 0.5)
-  lightness_delta = lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5)
-  n_splits_per_tick = N_SPLITS_PER_TICK_MIN
-
-  const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
-  polygons = [first_poly]
-}
-
 function handle_pointer_down(x, y) {
   pointer_is_down = true
   update_settings_based_on_pointer_pos(x, y)
@@ -163,36 +233,13 @@ function update_settings_based_on_pointer_pos(x, y) {
     py = y - rect.y
     px_pct = clamp(0, 1, px/canvas_screen_dim)
     py_pct = clamp(0, 1, py/canvas_screen_dim)
-    if (mode == MODE.CONTROL_SETTINGS) {
-      ratio = lerp(RATIO_MIN, RATIO_MAX, 1 - py_pct)
-      lightness_delta = lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, px_pct)
+    if (settings.mode == MODE.CONTROL_SETTINGS) {
+      settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 1 - py_pct))
+      settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, px_pct))
     }
 }
 
-function tick() {
-  g.clear()
-
-  ratio_slider_el.value = ratio
-  ratio_number_el.value = ratio
-  lightness_delta_slider_el.value = lightness_delta
-  lightness_delta_number_el.value = lightness_delta
-
-  for (let i = 0; i < polygons.length; i++) {
-    const poly = polygons[i]
-    g.beginFill(poly.hex)
-    g.drawPolygon(poly.verts)
-    g.endFill()
-  }
-
-  if (pointer_is_down) {
-    for (let i = 0; i < n_splits_per_tick; i++) {
-      split_poly(-1)
-    }
-    g.beginFill(0)
-    g.drawRect(px_pct*DIM, py_pct*DIM, 20, 20)
-    g.endFill()
-  }
-}
+// SPLIT POLY =================================================================
 
 // if poly_idx is out of range, ignores it and uses the largest poly.
 function split_poly(poly_idx) {
@@ -210,6 +257,7 @@ function split_poly(poly_idx) {
   let vidx
   let tmpuvert = pt(0, 0)
   let tmpvvert = pt(0, 0)
+  let ratio = settings.ratio.get_value()
   for (let i = 0; i < 10; i++) {
     const pct_u = Math.random()
     const pct_v = pct_u+0.5*ratio
@@ -259,7 +307,7 @@ function split_poly(poly_idx) {
 
   // TODO color
   const s = 1
-  const l = clamp(0, 1, poly.l + lightness_delta)
+  const l = clamp(0, 1, poly.l + settings.lightness_delta.get_value())
   const p1 = mk_poly(p1_verts, Math.random(), s, l)
   const p2 = mk_poly(p2_verts, Math.random(), s, l)
   polygons.splice(poly_idx, 1)
@@ -310,14 +358,6 @@ function calc_vert_at_pct_along_perimeter(poly, pct, out) {
   return -1
 }
 
-function clamp(min, max, n) {
-  return Math.min(Math.max(n, min), max)
-}
-
-function lerp(a, b, t) {
-  return a*(1-t)+b*t
-}
-
 function mk_poly(verts, h, s, l) {
   const ret = {
     circumference: 0,
@@ -342,15 +382,27 @@ function mk_poly(verts, h, s, l) {
   return ret
 }
 
+function pt(x, y) {
+  return new PIXI.Point(x, y)
+}
+
+// MATH HELPERS ===============================================================
+
+function clamp(min, max, n) {
+  return Math.min(Math.max(n, min), max)
+}
+
+function lerp(a, b, t) {
+  return a*(1-t)+b*t
+}
+
 function distance_squared(v0, v1) {
   const a = v1.x - v0.x
   const b = v1.y - v0.y
   return a*a + b*b
 }
 
-function pt(x, y) {
-  return new PIXI.Point(x, y)
-}
+// HSL TO HEX =================================================================
 
 // hsl logic based on
 // https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
