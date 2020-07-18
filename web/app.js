@@ -1,15 +1,38 @@
+// TODO control poly
+// TODO change poly colour based on cur settings
+// TODO set poly colour
+// TODO save presets
+// TODO delete poly
+// TODO undo/redo?
+// TODO save replay
+// TODO col delta
+// TODO brightness delta
+// TODO mode to split poly under pointer
+// TODO mode to make split with pointer start/end pos
+
+// constants
 const DIM = 800
 const DIM_2 = DIM/2
 const TWO_PI = Math.PI*2
+const MODE = {
+  CONTROL_SETTINGS: 0,
+  CONTROL_POLY: 1,
+  CHANGE_POLY_COLOUR: 2,
+  DELETE_POLY: 3,
+}
 
 let resolution
 let app
 let pointer_is_down
-let px = 0
-let py = 0
+let px
+let py
 let g
+
+// settings
+let mode
 let ratio
 let polygons
+let n_splits_per_tick
 
 // ============================================================================
 
@@ -19,12 +42,12 @@ function main() {
     width: DIM,
     height: DIM,
     backgroundColor: 0xffffff,
-    resolution: resolution,
-    antiAlias: true
+    resolution: resolution*2,
+    antialias: true
   })
   document.body.appendChild(app.view)
+  app.view.style.width = DIM + "px"
 
-  pointer_is_down = false
   document.body.addEventListener("mousedown", function(e) {
     handle_pointer_down(e.clientX, e.clientY)
   }, true)
@@ -47,41 +70,59 @@ function main() {
     handle_pointer_up(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
   }, true)
 
+  pointer_is_down = false
+
+  px = 0
+  py = 0
+
   g = new PIXI.Graphics()
   app.stage.addChild(g)
 
   reset()
+
   app.ticker.add(tick)
 }
 
 function reset() {
-  ratio = 0.4
+  mode = MODE.CONTROL_SETTINGS
+  ratio = 0.8
+  n_splits_per_tick = 1
+
   const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.76, 0.7)
   polygons = [first_poly]
+}
+
+function update_settings_based_on_pointer_pos() {
+    if (mode != MODE.CONTROL_SETTINGS) return
+    ratio = clamp(0, 1, 1.0 - py/DIM)
 }
 
 function handle_pointer_down(x, y) {
   pointer_is_down = true
   const rect = app.view.getBoundingClientRect()
-  px = x/resolution - rect.x
-  py = y/resolution - rect.y
+  px = x - rect.x
+  py = y - rect.y
+  update_settings_based_on_pointer_pos()
 }
 
 function handle_pointer_move(x, y) {
   const rect = app.view.getBoundingClientRect()
-  px = x/resolution - rect.x
-  py = y/resolution - rect.y
+  px = x - rect.x
+  py = y - rect.y
+  update_settings_based_on_pointer_pos()
 }
 
 function handle_pointer_up(x, y) {
   pointer_is_down = false
   const rect = app.view.getBoundingClientRect()
-  px = x/resolution - rect.x
-  py = y/resolution - rect.y
+  px = x - rect.x
+  py = y - rect.y
 }
 
 function tick() {
   g.clear()
+
+  document.getElementById("banner").innerHTML = `ratio: ${ratio}`
 
   for (let i = 0; i < polygons.length; i++) {
     const poly = polygons[i]
@@ -91,14 +132,12 @@ function tick() {
   }
 
   if (pointer_is_down) {
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
-    split_poly(-1)
+    for (let i = 0; i < n_splits_per_tick; i++) {
+      split_poly(-1)
+    }
+    g.beginFill(0)
+    g.drawRect(px - 10, py - 10, 20, 20)
+    g.endFill()
   }
 }
 
@@ -167,7 +206,7 @@ function split_poly(poly_idx) {
 
   // TODO color
   const s = 0.3
-  const l = 0.1
+  const l = 0.3
   const p1 = mk_poly(p1_verts, Math.random(), s, l)
   const p2 = mk_poly(p2_verts, Math.random(), s, l)
   polygons.splice(poly_idx, 1)
@@ -216,6 +255,10 @@ function calc_vert_at_pct_along_perimeter(poly, pct, out) {
     }
   }
   return -1
+}
+
+function clamp(min, max, n) {
+  return Math.min(Math.max(n, min), max)
 }
 
 function lerp(a, b, t) {
