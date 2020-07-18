@@ -1,3 +1,4 @@
+// TODO kbd shortcuts
 // TODO have radio button choice for which property is controlled by x/y
 // TODO change poly colour based on cur settings
 // TODO set poly colour
@@ -13,10 +14,11 @@ const DIM = 800
 const DIM_2 = DIM/2
 const TWO_PI = Math.PI*2
 const MODE = {
-  CONTROL_SETTINGS: 0,
-  CONTROL_POLY: 1,
-  CHANGE_POLY_COLOUR: 2,
-  DELETE_POLY: 3,
+  DEFAULT: 0,
+  CONTROL_SETTINGS: 1,
+  CONTROL_POLY: 2,
+  CHANGE_POLY_COLOUR: 3,
+  DELETE_POLY: 4,
 }
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
@@ -88,7 +90,7 @@ function resize() {
 }
 
 function reset() {
-  settings.mode = MODE.CONTROL_SETTINGS
+  settings.mode.set_value(MODE.DEFAULT)
   settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.5))
   settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5))
   settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5))
@@ -124,7 +126,13 @@ function tick() {
 
 function init_settings() {
   settings = {
-    mode: MODE.CONTROL_SETTINGS,
+    mode: mk_radio_param("Mode:", [
+      { value: MODE.DEFAULT, label: "Mouse/touch position doesn't do anything special" },
+      { value: MODE.CONTROL_SETTINGS, label: "Control settings with mouse/touch position" },
+      { value: MODE.CONTROL_POLY, label: "Split poly at mouse/touch position" },
+      { value: MODE.CHANGE_POLY_COLOUR, label: "Change poly colour at mouse/touch position" },
+      { value: MODE.DELETE_POLY, label: "Delete poly at mouse/touch position" },
+    ], MODE.DEFAULT),
     ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
     hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
     lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
@@ -148,7 +156,7 @@ function mk_number_param(label, min, max, initial_val, step_size) {
   const number_input_el = mk_number_input_el(min, max, step_size)
   parent_el.appendChild(number_input_el)
 
-  function onchange (v) {
+  function onchange(v) {
     val = parseFloat(v)
     slider_el.value = v
     number_input_el.value = v
@@ -159,15 +167,63 @@ function mk_number_param(label, min, max, initial_val, step_size) {
   number_input_el.onchange = () => onchange(number_input_el.value)
 
   const ret = {
-    get_value: () => {
-      return val
-    },
-    set_value: (v) => {
-      val = v
-      slider_el.value = v
-      number_input_el.value = v
+    get_value: () => val,
+    set_value: onchange
+  }
+  return ret
+}
+
+// options is an array of { value, label }
+function mk_radio_param(label, options, initial_val) {
+  let val = initial_val
+
+  const parent_el = document.createElement("div")
+  control_panel_el.appendChild(parent_el)
+
+  const label_el = document.createElement("b")
+  label_el.innerHTML = label
+  parent_el.appendChild(label_el)
+
+  const options_container_el = document.createElement("div")
+  parent_el.appendChild(options_container_el)
+
+  function onchange(v) {
+    val = parseInt(v)
+    for (key in options_map) {
+      options_map[key].checked = (key == val)
     }
   }
+
+  const options_map = {}
+  for (let i = 0; i < options.length; i++) {
+    const opt = options[i]
+
+    const opt_el = document.createElement("div")
+    options_container_el.appendChild(opt_el)
+
+    const opt_parent_label_el = document.createElement("label")
+    opt_el.appendChild(opt_parent_label_el)
+
+    const opt_input_el = document.createElement("input")
+    opt_input_el.type = "radio"
+    opt_input_el.id = label + "_opt_" + i
+    opt_input_el.name = label
+    opt_input_el.value = opt.value
+    opt_input_el.onchange = () => onchange(opt_input_el.value)
+    opt_parent_label_el.appendChild(opt_input_el)
+
+    const opt_label_el = document.createElement("i")
+    opt_label_el.innerHTML = opt.label
+    opt_parent_label_el.appendChild(opt_label_el)
+
+    options_map[opt.value] = opt_input_el
+  }
+
+  const ret = {
+    get_value: () => val,
+    set_value: onchange
+  }
+
   return ret
 }
 
@@ -238,7 +294,7 @@ function update_settings_based_on_pointer_pos(x, y) {
     py = y - rect.y
     px_pct = clamp(0, 1, px/canvas_screen_dim)
     py_pct = clamp(0, 1, py/canvas_screen_dim)
-    if (settings.mode == MODE.CONTROL_SETTINGS) {
+    if (settings.mode.get_value() == MODE.CONTROL_SETTINGS) {
       settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 1 - py_pct))
       settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, px_pct))
     }
