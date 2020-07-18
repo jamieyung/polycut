@@ -1,13 +1,10 @@
 // TODO have radio button choice for which property is controlled by x/y
-// TODO control poly
 // TODO change poly colour based on cur settings
 // TODO set poly colour
 // TODO save presets
 // TODO delete poly
 // TODO undo/redo?
 // TODO save replay
-// TODO col delta
-// TODO brightness delta
 // TODO mode to split poly under pointer
 // TODO mode to make split with pointer start/end pos
 
@@ -23,10 +20,16 @@ const MODE = {
 }
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
+const RATIO_STEP = 0.05
+const HUE_DELTA_MIN = -0.1
+const HUE_DELTA_MAX = 0.1
+const HUE_DELTA_STEP = 0.001
 const LIGHTNESS_DELTA_MIN = -0.01
 const LIGHTNESS_DELTA_MAX = 0.01
+const LIGHTNESS_DELTA_STEP = 0.0001
 const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
+const N_SPLITS_PER_TICK_STEP = 1
 
 let app
 let canvas_container_el
@@ -87,6 +90,7 @@ function resize() {
 function reset() {
   settings.mode = MODE.CONTROL_SETTINGS
   settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.5))
+  settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5))
   settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.5))
   settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
 
@@ -121,9 +125,10 @@ function tick() {
 function init_settings() {
   settings = {
     mode: MODE.CONTROL_SETTINGS,
-    ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, 0.05),
-    lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, 0.0001),
-    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, 1)
+    ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
+    hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
+    lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
+    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP)
   }
 }
 
@@ -144,7 +149,7 @@ function mk_number_param(label, min, max, initial_val, step_size) {
   parent_el.appendChild(number_input_el)
 
   function onchange (v) {
-    val = v
+    val = parseFloat(v)
     slider_el.value = v
     number_input_el.value = v
   }
@@ -305,11 +310,12 @@ function split_poly(poly_idx) {
     i++
   }
 
-  // TODO color
+  const h1 = (poly.h + settings.hue_delta.get_value() + 1)%1
+  const h2 = (poly.h + settings.hue_delta.get_value() + 1)%1
   const s = 1
   const l = clamp(0, 1, poly.l + settings.lightness_delta.get_value())
-  const p1 = mk_poly(p1_verts, Math.random(), s, l)
-  const p2 = mk_poly(p2_verts, Math.random(), s, l)
+  const p1 = mk_poly(p1_verts, h1, s, l)
+  const p2 = mk_poly(p2_verts, h2, s, l)
   polygons.splice(poly_idx, 1)
   insert_poly(p1)
   insert_poly(p2)
