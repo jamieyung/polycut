@@ -9,6 +9,10 @@
 // TODO undo/redo?
 // TODO save replay
 // TODO mode to make split with pointer start/end pos
+// TODO scale the lightness_delta in the ui to have fewer zeros
+// TODO hide control panel
+// TODO fullscreen
+// TODO treat hue as random range
 
 // CONSTANTS ==================================================================
 
@@ -127,7 +131,10 @@ function reset_canvas() {
 
   lines = [mk_line(p00, p10), mk_line(p10, p11), mk_line(p11, p01), mk_line(p01, p00)]
 
-  const first_poly = mk_poly([p00, p10, p11, p01], 0.5, 0.8, 0.2)
+  const h = Math.random()
+  const s = Math.random()
+  const l = Math.random()
+  const first_poly = mk_poly([p00, p10, p11, p01], h, s, l)
   polygons = [first_poly]
 }
 

@@ -7,6 +7,10 @@
     user-select: none;
 }
 
+button {
+    touch-action: manipulation;
+}
+
 html, body {
     margin: 0;
     padding: 0;
