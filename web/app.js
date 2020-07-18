@@ -7,6 +7,7 @@
 // TODO save presets
 // TODO delete poly
 // TODO undo/redo?
+// TODO save image
 // TODO save replay
 // TODO mode to make split with pointer start/end pos
 // TODO scale the lightness_delta in the ui to have fewer zeros
@@ -93,20 +94,19 @@ function resize() {
   const w = window.innerWidth
   const h = window.innerHeight
   const window_ratio = w/h
-  let rect = canvas_container_el.getBoundingClientRect()
 
   if (window_ratio < 0.8) { // very tall
     document.body.style["flex-direction"] = "column"
-    canvas_container_el.style["flex-basis"] = Math.min(w, DIM*resolution) + "px"
+    canvas_container_el.style["flex-basis"] = w + "px"
   } else if (window_ratio > 1.5) { // very wide
     document.body.style["flex-direction"] = "row"
-    canvas_container_el.style["flex-basis"] = Math.min(h, DIM*resolution) + "px"
+    canvas_container_el.style["flex-basis"] = h + "px"
   } else { // roughly square
     document.body.style["flex-direction"] = "row"
     canvas_container_el.style["flex-basis"] = "65%"
   }
 
-  rect = canvas_container_el.getBoundingClientRect() // recalc
+  let rect = canvas_container_el.getBoundingClientRect()
   const canvas_len = 0.9*Math.min(rect.width, rect.height) + "px"
   app.view.style["max-width"] = canvas_len
   app.view.style["max-height"] = canvas_len
