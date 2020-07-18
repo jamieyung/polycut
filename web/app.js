@@ -37,6 +37,7 @@ const N_SPLITS_PER_TICK_STEP = 1
 
 // VARIABLES ==================================================================
 
+let resolution
 let app
 let canvas_container_el
 let control_panel_el
@@ -45,16 +46,18 @@ let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let g // graphics
 let polygons
+let lines
 let settings
 
 // SETUP ======================================================================
 
 function main() {
+  resolution = 1*(window.devicePixelRatio || 1)
   app = new PIXI.Application({
     width: DIM,
     height: DIM,
     backgroundColor: 0xffffff,
-    resolution: 1*(window.devicePixelRatio || 1),
+    resolution: resolution,
     antialias: true
   })
   canvas_container_el = document.getElementById("canvas_container")
@@ -72,6 +75,7 @@ function main() {
   app.stage.addChild(g)
 
   polygons = []
+  lines = []
 
   init_control_panel()
 
@@ -82,7 +86,23 @@ function main() {
 }
 
 function resize() {
-  const rect = canvas_container_el.getBoundingClientRect()
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const window_ratio = w/h
+  let rect = canvas_container_el.getBoundingClientRect()
+
+  if (window_ratio < 0.8) { // very tall
+    document.body.style["flex-direction"] = "column"
+    canvas_container_el.style["flex-basis"] = Math.min(w, DIM*resolution) + "px"
+  } else if (window_ratio > 1.5) { // very wide
+    document.body.style["flex-direction"] = "row"
+    canvas_container_el.style["flex-basis"] = Math.min(h, DIM*resolution) + "px"
+  } else { // roughly square
+    document.body.style["flex-direction"] = "row"
+    canvas_container_el.style["flex-basis"] = "65%"
+  }
+
+  rect = canvas_container_el.getBoundingClientRect() // recalc
   const canvas_len = 0.9*Math.min(rect.width, rect.height) + "px"
   app.view.style["max-width"] = canvas_len
   app.view.style["max-height"] = canvas_len
@@ -94,12 +114,20 @@ function reset() {
   settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5))
   settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.75))
   settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
+  settings.draw_debug_lines.set_value(false)
 
   reset_canvas()
 }
 
 function reset_canvas() {
-  const first_poly = mk_poly([pt(0, 0), pt(DIM, 0), pt(DIM, DIM), pt(0, DIM)], 0.5, 0.8, 0.2)
+  const p00 = pt(0, 0)
+  const p10 = pt(DIM, 0)
+  const p11 = pt(DIM, DIM)
+  const p01 = pt(0, DIM)
+
+  lines = [mk_line(p00, p10), mk_line(p10, p11), mk_line(p11, p01), mk_line(p01, p00)]
+
+  const first_poly = mk_poly([p00, p10, p11, p01], 0.5, 0.8, 0.2)
   polygons = [first_poly]
 }
 
@@ -113,6 +141,15 @@ function tick() {
     g.beginFill(poly.hex)
     g.drawPolygon(poly.verts)
     g.endFill()
+  }
+
+  if (settings.draw_debug_lines.get_value()) {
+    g.lineStyle(1, 0xff00ff)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      g.moveTo(line.u.x, line.u.y)
+      g.lineTo(line.v.x, line.v.y)
+    }
   }
 
   if (pointer_is_down) {
@@ -179,7 +216,8 @@ function init_control_panel() {
     ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
     hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
     lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
-    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP)
+    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP),
+    draw_debug_lines: mk_toggle_param("Draw debug lines", false)
   }
 
   control_panel_el.appendChild(settings.mode.el)
@@ -195,6 +233,8 @@ function init_control_panel() {
   control_panel_el.appendChild(settings.n_splits_per_tick.el)
 
   control_panel_el.appendChild(mk_button_el("Reset canvas", reset_canvas))
+
+  control_panel_el.appendChild(settings.draw_debug_lines.el)
 }
 
 function mk_number_param(label, min, max, initial_val, step_size) {
@@ -282,6 +322,35 @@ function mk_radio_param(label, options, initial_val) {
     get_value: () => val,
     set_value: onchange,
     el: parent_el
+  }
+
+  return ret
+}
+
+function mk_toggle_param(label, initial_val) {
+  let val = initial_val
+
+  const el = document.createElement("label")
+
+  function onchange(v) {
+    val = v
+    input_el.checked = v
+  }
+
+  const input_el = document.createElement("input")
+  input_el.type = "checkbox"
+  input_el.checked = initial_val
+  input_el.onclick = () => onchange(input_el.checked)
+  el.appendChild(input_el)
+
+  const label_el = document.createElement("i")
+  label_el.innerHTML = label
+  el.appendChild(label_el)
+
+  const ret = {
+    get_value: () => val,
+    set_value: onchange,
+    el: el
   }
 
   return ret
@@ -403,6 +472,8 @@ function split_poly(poly_idx) {
     }
   }
   if (!found) return
+
+  lines.push(mk_line(uvert, vvert))
   const n_verts = poly.verts.length
 
   // init poly 1 to be u, then add all the verts up to but not including v.idx, then add v
@@ -483,6 +554,13 @@ function calc_vert_at_pct_along_perimeter(poly, pct, out) {
     }
   }
   return -1
+}
+
+function mk_line(u, v) {
+  return {
+    u: u,
+    v: v
+  }
 }
 
 function mk_poly(verts, h, s, l) {

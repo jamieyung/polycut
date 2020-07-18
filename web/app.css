@@ -16,19 +16,17 @@ html, body {
 
 body {
     display: flex;
-    flex-direction: row;
 }
 
 #control_panel {
-    flex-basis: 20%;
     flex-grow: 1;
-    flex-shrink: 0;
+    overflow-y: scroll;
     background-color: #bbb;
 }
 
 #canvas_container {
+    flex-shrink: 0;
     display: flex;
-    flex-grow: 1;
     align-items: center;
     justify-content: center;
 }
