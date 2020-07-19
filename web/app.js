@@ -88,7 +88,7 @@ let settings
 // SETUP ======================================================================
 
 function main() {
-  resolution = 1*(window.devicePixelRatio || 1)
+  resolution = 2*(window.devicePixelRatio || 1)
   app = new PIXI.Application({
     width: DIM,
     height: DIM,
