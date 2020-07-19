@@ -657,10 +657,18 @@ function split_poly(poly_idx) {
   const hdv2 = hue_delta_variance*lerp(-1, 1, Math.random())
   const h1 = (poly.h + hue_delta + hdv1 + 1)%1
   const h2 = (poly.h + hue_delta + hdv2 + 1)%1
+
   const s = 1
-  const l = clamp(0, 1, poly.l + settings.lightness_delta.get_value())
-  const p1 = mk_poly(p1_verts, h1, s, l)
-  const p2 = mk_poly(p2_verts, h2, s, l)
+
+  const lightness_delta = settings.lightness_delta.get_value()
+  const lightness_delta_variance = settings.lightness_delta_variance.get_value()
+  const ldv1 = lightness_delta_variance*lerp(-1, 1, Math.random())
+  const ldv2 = lightness_delta_variance*lerp(-1, 1, Math.random())
+  const l1 = clamp(0, 1, poly.l + lightness_delta + ldv1)
+  const l2 = clamp(0, 1, poly.l + lightness_delta + ldv2)
+
+  const p1 = mk_poly(p1_verts, h1, s, l1)
+  const p2 = mk_poly(p2_verts, h2, s, l2)
   polygons.splice(poly_idx, 1)
   insert_poly(p1)
   insert_poly(p2)
