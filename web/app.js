@@ -10,11 +10,9 @@
 // TODO save image
 // TODO save replay
 // TODO mode to make split with pointer start/end pos
-// TODO scale the lightness_delta in the ui to have fewer zeros
 // TODO hide control panel
 // TODO fullscreen
 // TODO hover over poly and get a color picker
-// TODO treat hue as random range
 
 // CONSTANTS ==================================================================
 
