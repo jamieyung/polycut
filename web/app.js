@@ -9,9 +9,13 @@
 // TODO undo/redo?
 // TODO save image
 // TODO save replay
+// TODO setting for resolution
 // TODO mode to make split with pointer start/end pos
 // TODO hide control panel
+// TODO add simple/advanced control panel modes
+// TODO add splash screen for first load
 // TODO fullscreen
+// TODO base colours on an image (specify how many colours to take from the image)
 // TODO hover over poly and get a color picker
 
 // CONSTANTS ==================================================================
@@ -88,8 +92,8 @@ const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
 const N_SPLITS_PER_TICK_INITIAL_VAL = 5
 const N_SPLITS_PER_TICK_RANGE = {
-  "min": [N_SPLITS_PER_TICK_MIN],
-  "max": [N_SPLITS_PER_TICK_MAX]
+  "min": [N_SPLITS_PER_TICK_MIN, 1],
+  "max": [N_SPLITS_PER_TICK_MAX, 1]
 }
 const N_SPLITS_PER_TICK_DISPLAY_SCALE = 1
 
