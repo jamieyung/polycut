@@ -36,37 +36,61 @@ const MODE_MAX = Object.entries(MODE)[N_MODES - 1][1]
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
 const RATIO_INITIAL_VAL = 0.25
-const RATIO_STEP = 0.01
+const RATIO_RANGE = {
+  "min": [RATIO_MIN],
+  "max": [RATIO_MAX]
+}
 const RATIO_DISPLAY_SCALE = 1
 
 const HUE_DELTA_MIN = -0.001
 const HUE_DELTA_MAX = 0.001
 const HUE_DELTA_INITIAL_VAL = 0
-const HUE_DELTA_STEP = 0.00001
+const HUE_DELTA_RANGE = {
+  "min": [HUE_DELTA_MIN],
+  "25%": [lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.4)],
+  "75%": [lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.6)],
+  "max": [HUE_DELTA_MAX]
+}
 const HUE_DELTA_DISPLAY_SCALE = 1000
 
 const HUE_DELTA_VARIANCE_MIN = 0
 const HUE_DELTA_VARIANCE_MAX = 0.1
 const HUE_DELTA_VARIANCE_INITIAL_VAL = 0.002
-const HUE_DELTA_VARIANCE_STEP = 0.0001
+const HUE_DELTA_VARIANCE_RANGE = {
+  "min": [HUE_DELTA_VARIANCE_MIN],
+  "50%": [lerp(HUE_DELTA_VARIANCE_MIN, HUE_DELTA_VARIANCE_MAX, 0.3)],
+  "max": [HUE_DELTA_VARIANCE_MAX]
+}
 const HUE_DELTA_VARIANCE_DISPLAY_SCALE = 10
 
 const LIGHTNESS_DELTA_MIN = -0.01
 const LIGHTNESS_DELTA_MAX = 0.01
 const LIGHTNESS_DELTA_INITIAL_VAL = 0.0008
-const LIGHTNESS_DELTA_STEP = 0.0001
+const LIGHTNESS_DELTA_RANGE = {
+  "min": [LIGHTNESS_DELTA_MIN],
+  "25%": [lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.4)],
+  "75%": [lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.6)],
+  "max": [LIGHTNESS_DELTA_MAX]
+}
 const LIGHTNESS_DELTA_DISPLAY_SCALE = 100
 
 const LIGHTNESS_DELTA_VARIANCE_MIN = 0
 const LIGHTNESS_DELTA_VARIANCE_MAX = 0.1
 const LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL = 0.008
-const LIGHTNESS_DELTA_VARIANCE_STEP = 0.0001
+const LIGHTNESS_DELTA_VARIANCE_RANGE = {
+  "min": [LIGHTNESS_DELTA_VARIANCE_MIN],
+  "50%": [lerp(LIGHTNESS_DELTA_VARIANCE_MIN, LIGHTNESS_DELTA_VARIANCE_MAX, 0.3)],
+  "max": [LIGHTNESS_DELTA_VARIANCE_MAX]
+}
 const LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE = 10
 
 const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
 const N_SPLITS_PER_TICK_INITIAL_VAL = 5
-const N_SPLITS_PER_TICK_STEP = 1
+const N_SPLITS_PER_TICK_RANGE = {
+  "min": [N_SPLITS_PER_TICK_MIN],
+  "max": [N_SPLITS_PER_TICK_MAX]
+}
 const N_SPLITS_PER_TICK_DISPLAY_SCALE = 1
 
 // VARIABLES ==================================================================
@@ -259,14 +283,14 @@ function init_control_panel() {
       min: RATIO_MIN,
       max: RATIO_MAX,
       initial_val: RATIO_INITIAL_VAL,
-      step_size: RATIO_STEP,
+      range: RATIO_RANGE,
       display_scale: RATIO_DISPLAY_SCALE,
     }),
     hue_delta: mk_number_param({
       min: HUE_DELTA_MIN,
       max: HUE_DELTA_MAX,
       initial_val: HUE_DELTA_INITIAL_VAL,
-      step_size: HUE_DELTA_STEP,
+      range: HUE_DELTA_RANGE,
       display_scale: HUE_DELTA_DISPLAY_SCALE,
       invert_btn: true,
     }),
@@ -274,14 +298,14 @@ function init_control_panel() {
       min: HUE_DELTA_VARIANCE_MIN,
       max: HUE_DELTA_VARIANCE_MAX,
       initial_val: HUE_DELTA_VARIANCE_INITIAL_VAL,
-      step_size: HUE_DELTA_VARIANCE_STEP,
+      range: HUE_DELTA_VARIANCE_RANGE,
       display_scale: HUE_DELTA_VARIANCE_DISPLAY_SCALE,
     }),
     lightness_delta: mk_number_param({
       min: LIGHTNESS_DELTA_MIN,
       max: LIGHTNESS_DELTA_MAX,
       initial_val: LIGHTNESS_DELTA_INITIAL_VAL,
-      step_size: LIGHTNESS_DELTA_STEP,
+      range: LIGHTNESS_DELTA_RANGE,
       display_scale: LIGHTNESS_DELTA_DISPLAY_SCALE,
       variance_sliders: true,
       invert_btn: true,
@@ -290,14 +314,14 @@ function init_control_panel() {
       min: LIGHTNESS_DELTA_VARIANCE_MIN,
       max: LIGHTNESS_DELTA_VARIANCE_MAX,
       initial_val: LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL,
-      step_size: LIGHTNESS_DELTA_VARIANCE_STEP,
+      range: LIGHTNESS_DELTA_VARIANCE_RANGE,
       display_scale: LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE,
     }),
     n_splits_per_tick: mk_number_param({
       min: N_SPLITS_PER_TICK_MIN,
       max: N_SPLITS_PER_TICK_MAX,
       initial_val: N_SPLITS_PER_TICK_INITIAL_VAL,
-      step_size: N_SPLITS_PER_TICK_STEP,
+      range: N_SPLITS_PER_TICK_RANGE,
       display_scale: N_SPLITS_PER_TICK_DISPLAY_SCALE,
       variance_sliders: true,
     }),
@@ -363,20 +387,20 @@ function mk_number_param(opts) {
   const initial_val = opts.initial_val * display_scale
   const min = opts.min * display_scale
   const max = opts.max * display_scale
-  const step_size = opts.step_size * display_scale
+
+  for (key in opts.range) {
+    opts.range[key] = opts.range[key].map((v) => v * display_scale)
+  }
 
   const slider_el = document.createElement("div")
   noUiSlider.create(slider_el, {
     start: initial_val,
-    step: step_size,
-    range: {
-      min: min,
-      max: max
-    }
+    range: opts.range,
+    behaviour: "none",
   })
   parent_el.appendChild(slider_el)
 
-  const number_input_el = mk_number_input_el(min, max, step_size)
+  const number_input_el = mk_number_input_el(min, max)
   parent_el.appendChild(number_input_el)
 
   function get_display_value() {
@@ -492,12 +516,12 @@ function mk_button_el(label, onclick) {
   return el
 }
 
-function mk_number_input_el(min, max, step_size) {
+function mk_number_input_el(min, max) {
   const el = document.createElement("input")
+  el.style["min-width"] = "8em"
   el.type = "number"
   el.min = min
   el.max = max
-  el.step = step_size
   return el
 }
 
