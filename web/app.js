@@ -6,7 +6,6 @@
 // TODO set poly colour
 // TODO save presets
 // TODO delete poly
-// TODO undo/redo?
 // TODO save image
 // TODO save replay
 // TODO setting for resolution
@@ -88,14 +87,14 @@ const LIGHTNESS_DELTA_VARIANCE_RANGE = {
 }
 const LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE = 10
 
-const N_SPLITS_PER_TICK_MIN = 1
-const N_SPLITS_PER_TICK_MAX = 50
-const N_SPLITS_PER_TICK_INITIAL_VAL = 5
-const N_SPLITS_PER_TICK_RANGE = {
-  "min": [N_SPLITS_PER_TICK_MIN, 1],
-  "max": [N_SPLITS_PER_TICK_MAX, 1]
+const ACTION_SPEED_MIN = 1
+const ACTION_SPEED_MAX = 50
+const ACTION_SPEED_INITIAL_VAL = 5
+const ACTION_SPEED_RANGE = {
+  "min": [ACTION_SPEED_MIN, 1],
+  "max": [ACTION_SPEED_MAX, 1]
 }
-const N_SPLITS_PER_TICK_DISPLAY_SCALE = 1
+const ACTION_SPEED_DISPLAY_SCALE = 1
 
 // VARIABLES ==================================================================
 
@@ -107,6 +106,8 @@ let pointer_is_down // true if mouse/touch is down
 let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let g // graphics
+let history
+let last_executed_command_idx // if > -1, means at state just after performing history[last_executed_command_idx]
 let polygons
 let lines
 let settings
@@ -176,7 +177,7 @@ function reset() {
   settings.hue_delta_variance.set_value(HUE_DELTA_VARIANCE_INITIAL_VAL)
   settings.lightness_delta.set_value(LIGHTNESS_DELTA_INITIAL_VAL)
   settings.lightness_delta_variance.set_value(LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL)
-  settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_INITIAL_VAL)
+  settings.action_speed.set_value(ACTION_SPEED_INITIAL_VAL)
   settings.draw_debug_lines.set_value(false)
 
   reset_canvas()
@@ -195,6 +196,9 @@ function reset_canvas() {
   const l = Math.random()
   const first_poly = mk_poly([p00, p10, p11, p01], h, s, l)
   polygons = [first_poly]
+
+  history = []
+  last_executed_command_idx = -1
 }
 
 // TICK =======================================================================
@@ -230,7 +234,7 @@ function do_action() {
   } else if (mode === MODE.CONTROL_SETTINGS) {
     split_n_polys()
   } else if (mode === MODE.SPLIT_POLY_AT_POINTER) {
-    const n = settings.n_splits_per_tick.get_value()
+    const n = settings.action_speed.get_value()
     for (let i = 0; i < n; i++) {
       const idx = get_poly_at_pointer()
       if (idx !== -1) split_poly(idx)
@@ -266,7 +270,7 @@ function pt_inside_poly(verts, x, y) {
 }
 
 function split_n_polys() {
-  const n = settings.n_splits_per_tick.get_value()
+  const n = settings.action_speed.get_value()
   for (let i = 0; i < n; i++) {
     split_poly(-1)
   }
@@ -321,12 +325,12 @@ function init_control_panel() {
       range: LIGHTNESS_DELTA_VARIANCE_RANGE,
       display_scale: LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE,
     }),
-    n_splits_per_tick: mk_number_param({
-      min: N_SPLITS_PER_TICK_MIN,
-      max: N_SPLITS_PER_TICK_MAX,
-      initial_val: N_SPLITS_PER_TICK_INITIAL_VAL,
-      range: N_SPLITS_PER_TICK_RANGE,
-      display_scale: N_SPLITS_PER_TICK_DISPLAY_SCALE,
+    action_speed: mk_number_param({
+      min: ACTION_SPEED_MIN,
+      max: ACTION_SPEED_MAX,
+      initial_val: ACTION_SPEED_INITIAL_VAL,
+      range: ACTION_SPEED_RANGE,
+      display_scale: ACTION_SPEED_DISPLAY_SCALE,
       variance_sliders: true,
     }),
     draw_debug_lines: mk_toggle_param("Draw debug lines", false)
@@ -356,9 +360,56 @@ function init_control_panel() {
   control_panel_el.appendChild(lightness_delta_variance_section.el)
   lightness_delta_variance_section.content_el.appendChild(settings.lightness_delta_variance.el)
 
-  const n_splits_per_tick_section = mk_control_panel_section("# splits per tick")
-  control_panel_el.appendChild(n_splits_per_tick_section.el)
-  n_splits_per_tick_section.content_el.appendChild(settings.n_splits_per_tick.el)
+  const action_speed_section = mk_control_panel_section("Action speed")
+  control_panel_el.appendChild(action_speed_section.el)
+  action_speed_section.content_el.appendChild(settings.action_speed.el)
+
+  const undo_redo_section = mk_control_panel_section("Undo/redo")
+  control_panel_el.appendChild(undo_redo_section.el)
+  undo_redo_section.content_el.appendChild(div_arr([
+    mk_button_el("Undo", undo),
+    mk_button_el("Redo", redo)
+  ]))
+  undo_redo_section.content_el.appendChild(div_arr([
+    mk_button_el("Undo x 10", () => {
+      for (let i = 0; i < 10; i++) {
+        undo()
+      }
+    }),
+    mk_button_el("Redo x 10", () => {
+      for (let i = 0; i < 10; i++) {
+        redo()
+      }
+    })
+  ]))
+  undo_redo_section.content_el.appendChild(div_arr([
+    mk_button_el("Undo at cur speed", () => {
+      const n = settings.action_speed.get_value()
+      for (let i = 0; i < n; i++) {
+        undo()
+      }
+    }),
+    mk_button_el("Redo at cur speed", () => {
+      const n = settings.action_speed.get_value()
+      for (let i = 0; i < n; i++) {
+        redo()
+      }
+    })
+  ]))
+  undo_redo_section.content_el.appendChild(div_arr([
+    mk_button_el("Undo all", () => {
+      const n = history.length
+      for (let i = 0; i < n; i++) {
+        undo()
+      }
+    }),
+    mk_button_el("Redo all", () => {
+      const n = (history.length - 1) - last_executed_command_idx
+      for (let i = 0; i < n; i++) {
+        redo()
+      }
+    })
+  ]))
 
   const misc_section = mk_control_panel_section("Misc")
   control_panel_el.appendChild(misc_section.el)
@@ -535,6 +586,14 @@ function div(child) {
   return el
 }
 
+function div_arr(children) {
+  const el = document.createElement("div")
+  for (c of children) {
+    el.appendChild(c)
+  }
+  return el
+}
+
 // INTERACTION HANDLERS =======================================================
 
 function init_listeners() {
@@ -552,11 +611,21 @@ function init_listeners() {
       const n = settings.mode.get_value()
       settings.mode.set_value(Math.max(n-1, MODE_MIN))
     } else if (e.code === "ArrowLeft") {
-      const n = settings.n_splits_per_tick.get_value()
-      settings.n_splits_per_tick.set_value(Math.max(n-1, N_SPLITS_PER_TICK_MIN))
+      const n = settings.action_speed.get_value()
+      settings.action_speed.set_value(Math.max(n-1, ACTION_SPEED_MIN))
     } else if (e.code === "ArrowRight") {
-      const n = settings.n_splits_per_tick.get_value()
-      settings.n_splits_per_tick.set_value(Math.min(n+1, N_SPLITS_PER_TICK_MAX))
+      const n = settings.action_speed.get_value()
+      settings.action_speed.set_value(Math.min(n+1, ACTION_SPEED_MAX))
+    } else if (e.code === "BracketLeft") {
+      const n = settings.action_speed.get_value()
+      for (let i = 0; i < n; i++) {
+        undo()
+      }
+    } else if (e.code === "BracketRight") {
+      const n = settings.action_speed.get_value()
+      for (let i = 0; i < n; i++) {
+        redo()
+      }
     }
   })
 
@@ -609,6 +678,36 @@ function update_settings_based_on_pointer_pos(x, y) {
     }
 }
 
+// UNDO/REDO ==================================================================
+
+function undo() {
+  if (last_executed_command_idx === -1) return
+  const command = history[last_executed_command_idx]
+
+  lines.splice(lines.length - 1, 1)
+
+  // poly was deleted, then p1 was added, then p2 was added. need to do this in reverse
+  polygons.splice(command.p2_idx, 1)
+  polygons.splice(command.p1_idx, 1)
+  polygons.splice(command.poly_idx, 0, command.poly)
+
+  last_executed_command_idx--
+}
+
+function redo() {
+  if (last_executed_command_idx === history.length - 1) return
+  const command = history[last_executed_command_idx + 1]
+
+  lines.push(command.line)
+
+  // poly was deleted, then p1 was added, then p2 was added. need to do this in the same order
+  polygons.splice(command.poly_idx, 1)
+  polygons.splice(command.p1_idx, 0, command.p1)
+  polygons.splice(command.p2_idx, 0, command.p2)
+
+  last_executed_command_idx++
+}
+
 // SPLIT POLY =================================================================
 
 // if poly_idx is out of range, ignores it and uses the largest poly.
@@ -648,7 +747,8 @@ function split_poly(poly_idx) {
   }
   if (!found) return
 
-  lines.push(mk_line(uvert, vvert))
+  const line = mk_line(uvert, vvert)
+  lines.push(line)
   const n_verts = poly.verts.length
 
   // init poly 1 to be u, then add all the verts up to but not including v.idx, then add v
@@ -696,13 +796,32 @@ function split_poly(poly_idx) {
   const p1 = mk_poly(p1_verts, h1, s, l1)
   const p2 = mk_poly(p2_verts, h2, s, l2)
   polygons.splice(poly_idx, 1)
-  insert_poly(p1)
-  insert_poly(p2)
+  const p1_idx = insert_poly(p1)
+  const p2_idx = insert_poly(p2)
+
+  const command = {
+    poly_idx: poly_idx,
+    poly: poly,
+    p1_idx: p1_idx,
+    p1: p1,
+    p2_idx: p2_idx,
+    p2: p2,
+    line: line
+  }
+  if (last_executed_command_idx === history.length - 1) { // at the head, add the command
+    history.push(command)
+  } else { // not at the head, need to throw away the commands after the current pos before adding the command
+    history = history.slice(0, last_executed_command_idx + 1)
+    history.push(command)
+  }
+  last_executed_command_idx++
 }
 
+// returns the insertion index
 function insert_poly(poly) {
   const i = sorted_poly_idx(poly)
   polygons.splice(i, 0, poly)
+  return i
 }
 
 function sorted_poly_idx(poly) {
