@@ -18,9 +18,12 @@
 
 // CONSTANTS ==================================================================
 
+const trace = console.log
+
 const DIM = 800
 const DIM_2 = DIM/2
 const TWO_PI = Math.PI*2
+
 const MODE = {
   DEFAULT: 0,
   CONTROL_SETTINGS: 1,
@@ -31,18 +34,42 @@ const MODE = {
 const N_MODES = Object.keys(MODE).length
 const MODE_MIN = Object.entries(MODE)[0][1]
 const MODE_MAX = Object.entries(MODE)[N_MODES - 1][1]
+
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
+const RATIO_INITIAL_VAL = 0.25
 const RATIO_STEP = 0.01
-const HUE_DELTA_MIN = -0.1
-const HUE_DELTA_MAX = 0.1
-const HUE_DELTA_STEP = 0.001
+const RATIO_DISPLAY_SCALE = 1
+
+const HUE_DELTA_MIN = -0.001
+const HUE_DELTA_MAX = 0.001
+const HUE_DELTA_INITIAL_VAL = 0
+const HUE_DELTA_STEP = 0.00001
+const HUE_DELTA_DISPLAY_SCALE = 1000
+
+const HUE_DELTA_VARIANCE_MIN = 0
+const HUE_DELTA_VARIANCE_MAX = 0.1
+const HUE_DELTA_VARIANCE_INITIAL_VAL = 0.002
+const HUE_DELTA_VARIANCE_STEP = 0.0001
+const HUE_DELTA_VARIANCE_DISPLAY_SCALE = 10
+
 const LIGHTNESS_DELTA_MIN = -0.01
 const LIGHTNESS_DELTA_MAX = 0.01
+const LIGHTNESS_DELTA_INITIAL_VAL = 0.0008
 const LIGHTNESS_DELTA_STEP = 0.0001
+const LIGHTNESS_DELTA_DISPLAY_SCALE = 100
+
+const LIGHTNESS_DELTA_VARIANCE_MIN = 0
+const LIGHTNESS_DELTA_VARIANCE_MAX = 0.1
+const LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL = 0.008
+const LIGHTNESS_DELTA_VARIANCE_STEP = 0.0001
+const LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE = 10
+
 const N_SPLITS_PER_TICK_MIN = 1
 const N_SPLITS_PER_TICK_MAX = 50
+const N_SPLITS_PER_TICK_INITIAL_VAL = 5
 const N_SPLITS_PER_TICK_STEP = 1
+const N_SPLITS_PER_TICK_DISPLAY_SCALE = 1
 
 // VARIABLES ==================================================================
 
@@ -118,10 +145,12 @@ function resize() {
 
 function reset() {
   settings.mode.set_value(MODE.SPLIT_POLY_AT_POINTER)
-  settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.2))
-  settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5001))
-  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.53))
-  settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
+  settings.ratio.set_value(RATIO_INITIAL_VAL)
+  settings.hue_delta.set_value(HUE_DELTA_INITIAL_VAL)
+  settings.hue_delta_variance.set_value(HUE_DELTA_VARIANCE_INITIAL_VAL)
+  settings.lightness_delta.set_value(LIGHTNESS_DELTA_INITIAL_VAL)
+  settings.lightness_delta_variance.set_value(LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL)
+  settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_INITIAL_VAL)
   settings.draw_debug_lines.set_value(false)
 
   reset_canvas()
@@ -221,70 +250,158 @@ function split_n_polys() {
 
 function init_control_panel() {
   settings = {
-    mode: mk_radio_param("Mode:", [
+    mode: mk_radio_param("mode", [
       { value: MODE.DEFAULT, label: "Mouse/touch position doesn't do anything special" },
       { value: MODE.CONTROL_SETTINGS, label: "Control settings with mouse/touch position" },
       { value: MODE.SPLIT_POLY_AT_POINTER, label: "Split poly at mouse/touch position" },
       { value: MODE.CHANGE_POLY_COLOUR_AT_POINTER, label: "Change poly colour at mouse/touch position" },
       { value: MODE.DELETE_POLY_AT_POINTER, label: "Delete poly at mouse/touch position" },
     ], MODE_MIN),
-    ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
-    hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
-    lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
-    n_splits_per_tick: mk_number_param("# splits per tick:", N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_MAX, N_SPLITS_PER_TICK_MIN, N_SPLITS_PER_TICK_STEP),
+    ratio: mk_number_param({
+      min: RATIO_MIN,
+      max: RATIO_MAX,
+      initial_val: RATIO_INITIAL_VAL,
+      step_size: RATIO_STEP,
+      display_scale: RATIO_DISPLAY_SCALE,
+    }),
+    hue_delta: mk_number_param({
+      min: HUE_DELTA_MIN,
+      max: HUE_DELTA_MAX,
+      initial_val: HUE_DELTA_INITIAL_VAL,
+      step_size: HUE_DELTA_STEP,
+      display_scale: HUE_DELTA_DISPLAY_SCALE,
+      invert_btn: true,
+    }),
+    hue_delta_variance: mk_number_param({
+      min: HUE_DELTA_VARIANCE_MIN,
+      max: HUE_DELTA_VARIANCE_MAX,
+      initial_val: HUE_DELTA_VARIANCE_INITIAL_VAL,
+      step_size: HUE_DELTA_VARIANCE_STEP,
+      display_scale: HUE_DELTA_VARIANCE_DISPLAY_SCALE,
+    }),
+    lightness_delta: mk_number_param({
+      min: LIGHTNESS_DELTA_MIN,
+      max: LIGHTNESS_DELTA_MAX,
+      initial_val: LIGHTNESS_DELTA_INITIAL_VAL,
+      step_size: LIGHTNESS_DELTA_STEP,
+      display_scale: LIGHTNESS_DELTA_DISPLAY_SCALE,
+      variance_sliders: true,
+      invert_btn: true,
+    }),
+    lightness_delta_variance: mk_number_param({
+      min: LIGHTNESS_DELTA_VARIANCE_MIN,
+      max: LIGHTNESS_DELTA_VARIANCE_MAX,
+      initial_val: LIGHTNESS_DELTA_VARIANCE_INITIAL_VAL,
+      step_size: LIGHTNESS_DELTA_VARIANCE_STEP,
+      display_scale: LIGHTNESS_DELTA_VARIANCE_DISPLAY_SCALE,
+    }),
+    n_splits_per_tick: mk_number_param({
+      min: N_SPLITS_PER_TICK_MIN,
+      max: N_SPLITS_PER_TICK_MAX,
+      initial_val: N_SPLITS_PER_TICK_INITIAL_VAL,
+      step_size: N_SPLITS_PER_TICK_STEP,
+      display_scale: N_SPLITS_PER_TICK_DISPLAY_SCALE,
+      variance_sliders: true,
+    }),
     draw_debug_lines: mk_toggle_param("Draw debug lines", false)
   }
 
-  control_panel_el.appendChild(settings.mode.el)
+  const mode_section = mk_control_panel_section("Mode")
+  control_panel_el.appendChild(mode_section.el)
+  mode_section.content_el.appendChild(settings.mode.el)
 
-  control_panel_el.appendChild(settings.ratio.el)
+  const ratio_section = mk_control_panel_section("Split ratio")
+  control_panel_el.appendChild(ratio_section.el)
+  ratio_section.content_el.appendChild(settings.ratio.el)
 
-  control_panel_el.appendChild(settings.hue_delta.el)
-  settings.hue_delta.el.appendChild(mk_button_el("Invert", () => settings.hue_delta.set_value(-1 * settings.hue_delta.get_value())))
+  const hue_delta_section = mk_control_panel_section("Hue delta")
+  control_panel_el.appendChild(hue_delta_section.el)
+  hue_delta_section.content_el.appendChild(settings.hue_delta.el)
 
-  control_panel_el.appendChild(settings.lightness_delta.el)
-  settings.lightness_delta.el.appendChild(mk_button_el("Invert", () => settings.lightness_delta.set_value(-1 * settings.lightness_delta.get_value())))
+  const hue_delta_variance_section = mk_control_panel_section("Hue delta variance")
+  control_panel_el.appendChild(hue_delta_variance_section.el)
+  hue_delta_variance_section.content_el.appendChild(settings.hue_delta_variance.el)
 
-  control_panel_el.appendChild(settings.n_splits_per_tick.el)
+  const lightness_delta_section = mk_control_panel_section("Lightness delta")
+  control_panel_el.appendChild(lightness_delta_section.el)
+  lightness_delta_section.content_el.appendChild(settings.lightness_delta.el)
 
-  control_panel_el.appendChild(mk_button_el("Reset canvas", reset_canvas))
+  const lightness_delta_variance_section = mk_control_panel_section("Lightness delta variance")
+  control_panel_el.appendChild(lightness_delta_variance_section.el)
+  lightness_delta_variance_section.content_el.appendChild(settings.lightness_delta_variance.el)
 
-  control_panel_el.appendChild(settings.draw_debug_lines.el)
+  const n_splits_per_tick_section = mk_control_panel_section("# splits per tick")
+  control_panel_el.appendChild(n_splits_per_tick_section.el)
+  n_splits_per_tick_section.content_el.appendChild(settings.n_splits_per_tick.el)
+
+  const misc_section = mk_control_panel_section("Misc")
+  control_panel_el.appendChild(misc_section.el)
+  misc_section.content_el.appendChild(mk_button_el("Reset canvas", reset_canvas))
+  misc_section.content_el.appendChild(settings.draw_debug_lines.el)
 }
 
-function mk_number_param(label, min, max, initial_val, step_size) {
-  let val = initial_val
-
+function mk_control_panel_section(label) {
   const parent_el = document.createElement("div")
+  parent_el.className = "control_panel_section"
 
   const label_el = document.createElement("h4")
   label_el.innerHTML = label
   parent_el.appendChild(label_el)
 
-  const asdf = document.createElement("div")
-  parent_el.appendChild(asdf)
+  const content_el = document.createElement("div")
+  content_el.className = "control_panel_section_content"
+  parent_el.appendChild(content_el)
 
-  const slider_el = mk_slider_el(min, max, step_size)
-  asdf.appendChild(slider_el)
+  return {
+    el: parent_el,
+    content_el: content_el
+  }
+}
+
+function mk_number_param(opts) {
+  const parent_el = document.createElement("div")
+
+  const display_scale = opts.display_scale || 1
+  const initial_val = opts.initial_val * display_scale
+  const min = opts.min * display_scale
+  const max = opts.max * display_scale
+  const step_size = opts.step_size * display_scale
+
+  const slider_el = document.createElement("div")
+  noUiSlider.create(slider_el, {
+    start: initial_val,
+    step: step_size,
+    range: {
+      min: min,
+      max: max
+    }
+  })
+  parent_el.appendChild(slider_el)
 
   const number_input_el = mk_number_input_el(min, max, step_size)
-  asdf.appendChild(number_input_el)
+  parent_el.appendChild(number_input_el)
 
-  function onchange(v) {
-    val = parseFloat(v)
-    slider_el.value = v
+  function get_display_value() {
+    return parseFloat(slider_el.noUiSlider.get())
+  }
+  function onchange(v, from_slider) {
+    if (!from_slider) slider_el.noUiSlider.set(v)
     number_input_el.value = v
   }
-  slider_el.oninput = () => onchange(slider_el.value)
-  slider_el.onchange = () => onchange(slider_el.value)
-  number_input_el.oninput = () => onchange(number_input_el.value)
-  number_input_el.onchange = () => onchange(number_input_el.value)
+  slider_el.noUiSlider.on("update", () => {
+    onchange(get_display_value(), true)
+  })
+  number_input_el.oninput = () => onchange(number_input_el.value, false)
+  number_input_el.onchange = () => onchange(number_input_el.value, false)
 
-  onchange(initial_val)
+  if (opts.invert_btn) {
+    const invert_btn_el = div(mk_button_el("Invert", () => onchange(get_display_value() * -1, false)))
+    parent_el.appendChild(invert_btn_el)
+  }
 
   const ret = {
-    get_value: () => val,
-    set_value: onchange,
+    get_value: () => { return get_display_value() / display_scale },
+    set_value: (v) => onchange(v*display_scale, false),
     el: parent_el
   }
 
@@ -292,17 +409,10 @@ function mk_number_param(label, min, max, initial_val, step_size) {
 }
 
 // options is an array of { value, label }
-function mk_radio_param(label, options, initial_val) {
+function mk_radio_param(id, options, initial_val) {
   let val = initial_val
 
   const parent_el = document.createElement("div")
-
-  const label_el = document.createElement("h4")
-  label_el.innerHTML = label
-  parent_el.appendChild(label_el)
-
-  const options_container_el = document.createElement("div")
-  parent_el.appendChild(options_container_el)
 
   function onchange(v) {
     val = parseInt(v)
@@ -316,15 +426,15 @@ function mk_radio_param(label, options, initial_val) {
     const opt = options[i]
 
     const opt_el = document.createElement("div")
-    options_container_el.appendChild(opt_el)
+    parent_el.appendChild(opt_el)
 
     const opt_parent_label_el = document.createElement("label")
     opt_el.appendChild(opt_parent_label_el)
 
     const opt_input_el = document.createElement("input")
     opt_input_el.type = "radio"
-    opt_input_el.id = label + "_opt_" + i
-    opt_input_el.name = label
+    opt_input_el.id = id + "_opt_" + i
+    opt_input_el.name = id
     opt_input_el.value = opt.value
     opt_input_el.onchange = () => onchange(opt_input_el.value)
     opt_parent_label_el.appendChild(opt_input_el)
@@ -384,16 +494,6 @@ function mk_button_el(label, onclick) {
   return el
 }
 
-function mk_slider_el(min, max, step_size) {
-  const el = document.createElement("input")
-  el.type = "range"
-  el.class = "slider"
-  el.min = min
-  el.max = max
-  el.step = step_size
-  return el
-}
-
 function mk_number_input_el(min, max, step_size) {
   const el = document.createElement("input")
   el.type = "number"
@@ -403,11 +503,16 @@ function mk_number_input_el(min, max, step_size) {
   return el
 }
 
+function div(child) {
+  const el = document.createElement("div")
+  el.appendChild(child)
+  return el
+}
+
 // INTERACTION HANDLERS =======================================================
 
 function init_listeners() {
   document.addEventListener("keydown", function(e) {
-    trace(e.code)
     if (e.code === "Space") {
       do_action()
     } else if (e.code === "KeyR") {
@@ -546,8 +651,12 @@ function split_poly(poly_idx) {
     i++
   }
 
-  const h1 = (poly.h + settings.hue_delta.get_value() + 1)%1
-  const h2 = (poly.h + settings.hue_delta.get_value() + 1)%1
+  const hue_delta = settings.hue_delta.get_value()
+  const hue_delta_variance = settings.hue_delta_variance.get_value()
+  const hdv1 = hue_delta_variance*lerp(-1, 1, Math.random())
+  const hdv2 = hue_delta_variance*lerp(-1, 1, Math.random())
+  const h1 = (poly.h + hue_delta + hdv1 + 1)%1
+  const h2 = (poly.h + hue_delta + hdv2 + 1)%1
   const s = 1
   const l = clamp(0, 1, poly.l + settings.lightness_delta.get_value())
   const p1 = mk_poly(p1_verts, h1, s, l)
@@ -679,8 +788,6 @@ function hue_to_rgb(p, q, t) {
   if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
   return p
 }
-
-const trace = console.log
 
 // ============================================================================
 

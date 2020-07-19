@@ -28,6 +28,16 @@ body {
     background-color: #bbb;
 }
 
+.control_panel_section {
+    padding: 1em;
+    border-bottom: 1px solid #999;
+}
+
+h4 {
+    margin: 0;
+    margin-bottom: 0.5em;
+}
+
 #canvas_container {
     flex-shrink: 0;
     display: flex;
