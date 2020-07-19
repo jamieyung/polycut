@@ -1,6 +1,6 @@
 // TODOS ======================================================================
 
-// TODO kbd shortcuts
+// TODO kbd shortcuts help text/popup
 // TODO have radio button choice for which property is controlled by x/y
 // TODO change poly colour based on cur settings
 // TODO set poly colour
@@ -13,6 +13,7 @@
 // TODO scale the lightness_delta in the ui to have fewer zeros
 // TODO hide control panel
 // TODO fullscreen
+// TODO hover over poly and get a color picker
 // TODO treat hue as random range
 
 // CONSTANTS ==================================================================
@@ -27,6 +28,9 @@ const MODE = {
   CHANGE_POLY_COLOUR_AT_POINTER: 3,
   DELETE_POLY_AT_POINTER: 4,
 }
+const N_MODES = Object.keys(MODE).length
+const MODE_MIN = Object.entries(MODE)[0][1]
+const MODE_MAX = Object.entries(MODE)[N_MODES - 1][1]
 const RATIO_MIN = 0.05
 const RATIO_MAX = 1
 const RATIO_STEP = 0.01
@@ -114,9 +118,9 @@ function resize() {
 
 function reset() {
   settings.mode.set_value(MODE.SPLIT_POLY_AT_POINTER)
-  settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.5))
-  settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5))
-  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.75))
+  settings.ratio.set_value(lerp(RATIO_MIN, RATIO_MAX, 0.2))
+  settings.hue_delta.set_value(lerp(HUE_DELTA_MIN, HUE_DELTA_MAX, 0.5001))
+  settings.lightness_delta.set_value(lerp(LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, 0.53))
   settings.n_splits_per_tick.set_value(N_SPLITS_PER_TICK_MIN)
   settings.draw_debug_lines.set_value(false)
 
@@ -160,22 +164,26 @@ function tick() {
   }
 
   if (pointer_is_down) {
-    const mode = settings.mode.get_value()
-    if (mode === MODE.DEFAULT) {
-      split_n_polys()
-    } else if (mode === MODE.CONTROL_SETTINGS) {
-      split_n_polys()
-    } else if (mode === MODE.SPLIT_POLY_AT_POINTER) {
-      const n = settings.n_splits_per_tick.get_value()
-      for (let i = 0; i < n; i++) {
-        const idx = get_poly_at_pointer()
-        if (idx !== -1) split_poly(idx)
-      }
-    } else if (mode === MODE.CHANGE_POLY_COLOUR_AT_POINTER) {
-    } else if (mode === MODE.DELETE_POLY_AT_POINTER) {
+    do_action()
+  }
+}
+
+function do_action() {
+  const mode = settings.mode.get_value()
+  if (mode === MODE.DEFAULT) {
+    split_n_polys()
+  } else if (mode === MODE.CONTROL_SETTINGS) {
+    split_n_polys()
+  } else if (mode === MODE.SPLIT_POLY_AT_POINTER) {
+    const n = settings.n_splits_per_tick.get_value()
+    for (let i = 0; i < n; i++) {
       const idx = get_poly_at_pointer()
-      if (idx !== -1) polygons.splice(idx, 1)
+      if (idx !== -1) split_poly(idx)
     }
+  } else if (mode === MODE.CHANGE_POLY_COLOUR_AT_POINTER) {
+  } else if (mode === MODE.DELETE_POLY_AT_POINTER) {
+    const idx = get_poly_at_pointer()
+    if (idx !== -1) polygons.splice(idx, 1)
   }
 }
 
@@ -219,7 +227,7 @@ function init_control_panel() {
       { value: MODE.SPLIT_POLY_AT_POINTER, label: "Split poly at mouse/touch position" },
       { value: MODE.CHANGE_POLY_COLOUR_AT_POINTER, label: "Change poly colour at mouse/touch position" },
       { value: MODE.DELETE_POLY_AT_POINTER, label: "Delete poly at mouse/touch position" },
-    ], MODE.DEFAULT),
+    ], MODE_MIN),
     ratio: mk_number_param("Split ratio:", RATIO_MIN, RATIO_MAX, RATIO_MAX, RATIO_STEP),
     hue_delta: mk_number_param("Hue delta:", HUE_DELTA_MIN, HUE_DELTA_MAX, HUE_DELTA_MAX, HUE_DELTA_STEP),
     lightness_delta: mk_number_param("Lightness delta:", LIGHTNESS_DELTA_MIN, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_MAX, LIGHTNESS_DELTA_STEP),
@@ -272,11 +280,14 @@ function mk_number_param(label, min, max, initial_val, step_size) {
   number_input_el.oninput = () => onchange(number_input_el.value)
   number_input_el.onchange = () => onchange(number_input_el.value)
 
+  onchange(initial_val)
+
   const ret = {
     get_value: () => val,
     set_value: onchange,
     el: parent_el
   }
+
   return ret
 }
 
@@ -325,6 +336,8 @@ function mk_radio_param(label, options, initial_val) {
     options_map[opt.value] = opt_input_el
   }
 
+  onchange(initial_val)
+
   const ret = {
     get_value: () => val,
     set_value: onchange,
@@ -357,6 +370,7 @@ function mk_toggle_param(label, initial_val) {
   const ret = {
     get_value: () => val,
     set_value: onchange,
+    flip: () => onchange(!val),
     el: el
   }
 
@@ -392,6 +406,29 @@ function mk_number_input_el(min, max, step_size) {
 // INTERACTION HANDLERS =======================================================
 
 function init_listeners() {
+  document.addEventListener("keydown", function(e) {
+    trace(e.code)
+    if (e.code === "Space") {
+      do_action()
+    } else if (e.code === "KeyR") {
+      reset_canvas()
+    } else if (e.code === "KeyD") {
+      settings.draw_debug_lines.flip()
+    } else if (e.code === "ArrowDown") {
+      const n = settings.mode.get_value()
+      settings.mode.set_value(Math.min(n+1, MODE_MAX))
+    } else if (e.code === "ArrowUp") {
+      const n = settings.mode.get_value()
+      settings.mode.set_value(Math.max(n-1, MODE_MIN))
+    } else if (e.code === "ArrowLeft") {
+      const n = settings.n_splits_per_tick.get_value()
+      settings.n_splits_per_tick.set_value(Math.max(n-1, N_SPLITS_PER_TICK_MIN))
+    } else if (e.code === "ArrowRight") {
+      const n = settings.n_splits_per_tick.get_value()
+      settings.n_splits_per_tick.set_value(Math.min(n+1, N_SPLITS_PER_TICK_MAX))
+    }
+  })
+
   canvas_container_el.addEventListener("mousedown", function(e) {
     handle_pointer_down(e.clientX, e.clientY)
   }, true)
