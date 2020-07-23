@@ -10,6 +10,11 @@
 
 button {
     touch-action: manipulation;
+    border: 1px solid #ccc;
+    border-radius: 2px;
+    outline: none;
+    padding: 0.5em;
+    cursor: pointer;
 }
 
 html, body {
@@ -25,13 +30,37 @@ body {
 
 #control_panel {
     flex-grow: 1;
-    overflow-y: scroll;
+    overflow-y: auto;
     background-color: #ddd;
 }
 
 .control_panel_section {
     padding: 1em;
     border-bottom: 1px solid #999;
+}
+
+.width100 {
+    width: 100%;
+}
+
+.btn_bar {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+.btn_bar_btn:not(:last-child) {
+    margin-right: 0.5em;
+}
+
+.btn_bar_btn {
+    flex-grow: 1;
+}
+
+.focused_button {
+    border: 1px solid #08c;
+    background-color: #0ae;
+    color: white;
 }
 
 h4 {
