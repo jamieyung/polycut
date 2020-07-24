@@ -3,7 +3,7 @@ module Main where
 import Prelude
 
 import DOM.HTML.Indexed.InputType (InputType(..))
-import DOM.HTML.Indexed.StepValue (StepValue(..))
+import Data.Array as A
 import Data.Const (Const)
 import Data.Foldable (traverse_)
 import Data.Function.Uncurried (Fn2, runFn2)
@@ -14,7 +14,6 @@ import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Number as Number
 import Data.Symbol (SProxy(..))
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
@@ -28,6 +27,7 @@ import Halogen.HTML.Properties as HP
 import Halogen.Query.EventSource (eventListenerEventSource)
 import Halogen.VDom.Driver (runUI)
 import Record as Record
+import Slider as Slider
 import Web.DOM.ParentNode (QuerySelector(..))
 import Web.Event.EventTarget (EventTarget)
 import Web.TouchEvent.EventTypes (touchcancel, touchend, touchmove, touchstart)
@@ -81,11 +81,11 @@ component = H.mkComponent
         }
     }
 
-type M = H.HalogenM State Action () Void
+type M = H.HalogenM State Action Child_slots Void
 
-type Html m = H.ComponentHTML Action () m
+type Html m = H.ComponentHTML Action Child_slots m
 
-{-- ------------------------------------------------------------------------------- --}
+-------------------------------------------------------------------------------
 -- State ----------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
@@ -169,10 +169,20 @@ initial_advanced_params = Advanced_params
     }
 
 -------------------------------------------------------------------------------
+-- Slots ----------------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+type Child_slots =
+    ( slider :: Slider.Slot String -- id
+    )
+
+_slider = SProxy :: SProxy "slider"
+
+-------------------------------------------------------------------------------
 -- Render ---------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
-render :: forall m. State -> Html m
+render :: forall m. MonadAff m => State -> Html m
 render st = HH.div_
     [ render_control_panel_section "Interaction mode"
         [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly, Cut_random_poly] # map \x -> HH.button
@@ -271,55 +281,55 @@ render_simple_params (Simple_params params) = HH.div []
         ]
     ]
 
-render_advanced_params :: forall m. Advanced_params -> Html m
+render_advanced_params :: forall m. MonadAff m => Advanced_params -> Html m
 render_advanced_params (Advanced_params params) = HH.div_
     [ render_control_panel_section "# cuts per tick"
-        [ HH.input
-            [ HP.type_ InputRange
-            , HP.min 1.0
-            , HP.max 30.0
-            , HP.step $ Step 1.0
-            , HP.value $ show params.n_cuts_per_tick
-            , HE.onValueInput \str -> do
-                n <- Int.fromString str
-                pure $ Set_param $ Set_advanced_n_cuts_per_tick n
-            ]
+        [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
+            { id: "n_cuts_per_tick_slider"
+            , start: [ Int.toNumber params.n_cuts_per_tick ]
+            , range:
+                { min: 1.0
+                , max: 30.0
+                , non_linear: []
+                }
+            } case _ of
+                Slider.Slider_updated arr -> do
+                    v <- A.index arr 0
+                    pure $ Set_param $ Set_advanced_n_cuts_per_tick $ Int.floor v
         , HH.text $ show params.n_cuts_per_tick
         ]
     , render_control_panel_section "Cut ratio"
-        [ HH.input
-            [ HP.type_ InputRange
-            , HP.min 0.0
-            , HP.max 1.0
-            , HP.step $ Step 0.01
-            , HP.value $ show params.cut_ratio
-            , HE.onValueInput \str -> do
-                n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_cut_ratio n
-            ]
+        [ HH.slot _slider "cut_ratio_slider" Slider.component
+            { id: "cut_ratio_slider"
+            , start: [ params.cut_ratio ]
+            , range:
+                { min: 0.0
+                , max: 1.0
+                , non_linear: []
+                }
+            } case _ of
+                Slider.Slider_updated arr -> do
+                    v <- A.index arr 0
+                    pure $ Set_param $ Set_advanced_cut_ratio v
         , HH.text $ show params.cut_ratio
         ]
     , render_control_panel_section "Hue delta"
-        [ HH.input
-            [ HP.type_ InputRange
-            , HP.min (-0.5)
-            , HP.max 0.5
-            , HP.step $ Step 0.001
-            , HP.value $ show $ params.hue_delta_min
-            , HE.onValueInput \str -> do
-                n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_hue_delta_min $ min params.hue_delta_max n
-            ]
-        , HH.input
-            [ HP.type_ InputRange
-            , HP.min (-0.5)
-            , HP.max 0.5
-            , HP.step $ Step 0.001
-            , HP.value $ show $ params.hue_delta_max
-            , HE.onValueInput \str -> do
-                n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_hue_delta_max $ max params.hue_delta_min n
-            ]
+        [ HH.slot _slider "hue_delta_slider" Slider.component
+            { id: "hue_delta_slider"
+            , start: [ params.hue_delta_min, params.hue_delta_max ]
+            , range:
+                { min: -0.5
+                , max: 0.5
+                , non_linear:
+                    [ { k: "15%", v: -0.001, step: 0.00001 }
+                    , { k: "85%", v: 0.001, step: 0.001 }
+                    ]
+                }
+            } case _ of
+                Slider.Slider_updated arr -> do
+                    u <- A.index arr 0
+                    v <- A.index arr 1
+                    pure $ Set_param $ Set_advanced_hue_delta u v
         , HH.text $
             "[" <> show params.hue_delta_min
             <> ", "
@@ -327,26 +337,22 @@ render_advanced_params (Advanced_params params) = HH.div_
             <> "]"
         ]
     , render_control_panel_section "Lightness delta"
-        [ HH.input
-            [ HP.type_ InputRange
-            , HP.min (-0.03)
-            , HP.max 0.03
-            , HP.step $ Step 0.001
-            , HP.value $ show $ params.lightness_delta_min
-            , HE.onValueInput \str -> do
-                n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_lightness_delta_min $ min params.hue_delta_max n
-            ]
-        , HH.input
-            [ HP.type_ InputRange
-            , HP.min (-0.03)
-            , HP.max 0.03
-            , HP.step $ Step 0.001
-            , HP.value $ show $ params.lightness_delta_max
-            , HE.onValueInput \str -> do
-                n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_lightness_delta_max $ max params.hue_delta_min n
-            ]
+        [ HH.slot _slider "lightness_delta_slider" Slider.component
+            { id: "lightness_delta_slider"
+            , start: [ params.lightness_delta_min, params.lightness_delta_max ]
+            , range:
+                { min: -0.03
+                , max: 0.03
+                , non_linear:
+                    [ { k: "15%", v: -0.001, step: 0.00001 }
+                    , { k: "85%", v: 0.001, step: 0.001 }
+                    ]
+                }
+            } case _ of
+                Slider.Slider_updated arr -> do
+                    u <- A.index arr 0
+                    v <- A.index arr 1
+                    pure $ Set_param $ Set_advanced_lightness_delta u v
         , HH.text $
             "[" <> show params.lightness_delta_min
             <> ", "
@@ -388,10 +394,8 @@ data Set_param_action
     | Set_simple_lightness_change SimpleLightnessChangeParam
     | Set_advanced_n_cuts_per_tick Int
     | Set_advanced_cut_ratio Number
-    | Set_advanced_hue_delta_min Number
-    | Set_advanced_hue_delta_max Number
-    | Set_advanced_lightness_delta_min Number
-    | Set_advanced_lightness_delta_max Number
+    | Set_advanced_hue_delta Number Number
+    | Set_advanced_lightness_delta Number Number
     | Toggle_draw_debug_lines
     | Toggle_draw_pointer_crosshair
 
@@ -466,10 +470,8 @@ handle_set_param_action = case _ of
     Set_simple_lightness_change x -> H.modify_ $ Lens.set _simple_lightness_change x
     Set_advanced_n_cuts_per_tick n -> H.modify_ $ Lens.set _advanced_n_cuts_per_tick n
     Set_advanced_cut_ratio n -> H.modify_ $ Lens.set _advanced_cut_ratio n
-    Set_advanced_hue_delta_min n -> H.modify_ $ Lens.set _advanced_hue_delta_min n
-    Set_advanced_hue_delta_max n -> H.modify_ $ Lens.set _advanced_hue_delta_max n
-    Set_advanced_lightness_delta_min n -> H.modify_ $ Lens.set _advanced_lightness_delta_min n
-    Set_advanced_lightness_delta_max n -> H.modify_ $ Lens.set _advanced_lightness_delta_max n
+    Set_advanced_hue_delta u v -> H.modify_ $ (Lens.set _advanced_hue_delta_min u) >>> (Lens.set _advanced_hue_delta_max v)
+    Set_advanced_lightness_delta u v -> H.modify_ $ (Lens.set _advanced_lightness_delta_min u) >>> (Lens.set _advanced_lightness_delta_max v)
     Toggle_draw_debug_lines -> H.modify_ $ Lens.over _draw_debug_lines not
     Toggle_draw_pointer_crosshair -> H.modify_ $ Lens.over _draw_pointer_crosshair not
 
