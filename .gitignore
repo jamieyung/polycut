@@ -4,3 +4,4 @@ Session.vim
 .spago/
 output/
 web/app.js
+web/app.css

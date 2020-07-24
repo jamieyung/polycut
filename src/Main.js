@@ -155,6 +155,8 @@ function reset_canvas() {
   last_executed_command_idx = -1
 }
 
+exports.reset_canvas = reset_canvas
+
 // TICK =======================================================================
 
 function tick() {

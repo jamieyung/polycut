@@ -4,6 +4,7 @@
   , "debug"
   , "effect"
   , "halogen"
+  , "numbers"
   , "profunctor-lenses"
   , "psci-support"
   ]
