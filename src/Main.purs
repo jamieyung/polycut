@@ -12,12 +12,13 @@ import Data.Lens (Lens')
 import Data.Lens as Lens
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Symbol (SProxy(..))
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect, liftEffect)
+import Global (toFixed)
 import Halogen (ClassName(..))
 import Halogen as H
 import Halogen.Aff as HA
@@ -106,7 +107,6 @@ data Param_mode = Simple | Advanced
 data Interaction_mode
     = Cut_poly_at_pointer
     | Cut_largest_poly
-    | Cut_random_poly
 
 initial_state :: State
 initial_state =
@@ -185,14 +185,13 @@ _slider = SProxy :: SProxy "slider"
 render :: forall m. MonadAff m => State -> Html m
 render st = HH.div_
     [ render_control_panel_section "Interaction mode"
-        [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly, Cut_random_poly] # map \x -> HH.button
+        [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly] # map \x -> HH.button
             [ HE.onClick \_ -> Just $ Set_interaction_mode x
             , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == st.interaction_mode then [ ClassName "focused_button" ] else []
             ]
             [ HH.text case x of
                 Cut_poly_at_pointer -> "Cut poly at pointer"
                 Cut_largest_poly -> "Cut largest poly"
-                Cut_random_poly -> "Cut random poly"
             ]
         ]
     , render_control_panel_section "Misc"
@@ -311,7 +310,7 @@ render_advanced_params (Advanced_params params) = HH.div_
                 Slider.Slider_updated arr -> do
                     v <- A.index arr 0
                     pure $ Set_param $ Set_advanced_cut_ratio v
-        , HH.text $ show params.cut_ratio
+        , HH.text $ fromMaybe "" $ toFixed 5 params.cut_ratio
         ]
     , render_control_panel_section "Hue delta"
         [ HH.slot _slider "hue_delta_slider" Slider.component
@@ -330,11 +329,7 @@ render_advanced_params (Advanced_params params) = HH.div_
                     u <- A.index arr 0
                     v <- A.index arr 1
                     pure $ Set_param $ Set_advanced_hue_delta u v
-        , HH.text $
-            "[" <> show params.hue_delta_min
-            <> ", "
-            <> show params.hue_delta_max
-            <> "]"
+        , HH.text $ render_range params.hue_delta_min params.hue_delta_max
         ]
     , render_control_panel_section "Lightness delta"
         [ HH.slot _slider "lightness_delta_slider" Slider.component
@@ -353,13 +348,15 @@ render_advanced_params (Advanced_params params) = HH.div_
                     u <- A.index arr 0
                     v <- A.index arr 1
                     pure $ Set_param $ Set_advanced_lightness_delta u v
-        , HH.text $
-            "[" <> show params.lightness_delta_min
-            <> ", "
-            <> show params.lightness_delta_max
-            <> "]"
+        , HH.text $ render_range params.lightness_delta_min params.lightness_delta_max
         ]
     ]
+
+render_range :: Number -> Number -> String
+render_range u v = fromMaybe "" do
+    u' <- toFixed 5 u
+    v' <- toFixed 5 v
+    pure $ "[" <> u' <> ", " <> v' <> "]"
 
 render_control_panel_section :: forall m. String -> Array (Html m) -> Html m
 render_control_panel_section title children = HH.div
@@ -380,7 +377,7 @@ button_bar btns = HH.span [ HP.classes [ ClassName "btn_bar" ] ] btns
 data Action
     = Initialize
     | Handle_pointer_move Int Int
-    | Handle_pointer_down
+    | Handle_pointer_down Int Int
     | Handle_pointer_up
     | Set_interaction_mode Interaction_mode
     | Set_param_mode Param_mode
@@ -419,7 +416,9 @@ handle_action = case _ of
         void $ H.subscribe $ eventListenerEventSource mousemove canvas_container \evt -> do
             mevt <- ME.fromEvent evt
             pure $ Handle_pointer_move (ME.clientX mevt) (ME.clientY mevt)
-        void $ H.subscribe $ eventListenerEventSource mousedown canvas_container \_ -> Just Handle_pointer_down
+        void $ H.subscribe $ eventListenerEventSource mousedown canvas_container \evt -> do
+            mevt <- ME.fromEvent evt
+            pure $ Handle_pointer_down (ME.clientX mevt) (ME.clientY mevt)
         void $ H.subscribe $ eventListenerEventSource mouseup canvas_container \_ -> Just Handle_pointer_up
 
         -- subscribe to touch events
@@ -428,7 +427,11 @@ handle_action = case _ of
             let changedTouches = TE.changedTouches tevt
             touch <- TL.item 0 changedTouches
             pure $ Handle_pointer_move (T.clientX touch) (T.clientY touch)
-        void $ H.subscribe $ eventListenerEventSource touchstart canvas_container \_ -> Just Handle_pointer_down
+        void $ H.subscribe $ eventListenerEventSource touchstart canvas_container \evt -> do
+            tevt <- TE.fromEvent evt
+            let changedTouches = TE.changedTouches tevt
+            touch <- TL.item 0 changedTouches
+            pure $ Handle_pointer_down (T.clientX touch) (T.clientY touch)
         void $ H.subscribe $ eventListenerEventSource touchend canvas_container \_ -> Just Handle_pointer_up
         void $ H.subscribe $ eventListenerEventSource touchcancel canvas_container \_ -> Just Handle_pointer_up
 
@@ -436,13 +439,13 @@ handle_action = case _ of
         { px_pct, py_pct } <- liftEffect $ runFn2 update_px_py x y
         H.modify_ _ { px_pct = Int.toNumber x, py_pct = Int.toNumber y }
 
-    Handle_pointer_down -> do
+    Handle_pointer_down x y -> do
+        { px_pct, py_pct } <- liftEffect $ runFn2 update_px_py x y
         st <- H.get
         case st.interaction_mode of
             Cut_poly_at_pointer -> liftEffect set_action_cut_poly_at_pointer
             Cut_largest_poly -> liftEffect set_action_cut_largest_poly
-            Cut_random_poly -> liftEffect set_action_cut_random_poly
-        H.put $ st { pointer_is_down = true }
+        H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
 
     Handle_pointer_up -> do
         liftEffect set_action_no_op
@@ -517,7 +520,6 @@ foreign import update_px_py :: Fn2 Int Int (Effect { px_pct :: Number, py_pct ::
 foreign import set_action_no_op :: Effect Unit
 foreign import set_action_cut_poly_at_pointer :: Effect Unit
 foreign import set_action_cut_largest_poly :: Effect Unit
-foreign import set_action_cut_random_poly :: Effect Unit
 foreign import set_params_impl :: Raw_params -> Effect Unit
 foreign import init :: Effect Unit
 foreign import reset_canvas :: Effect Unit

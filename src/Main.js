@@ -7,7 +7,6 @@ const DIM = 800
 const ACTION_NO_OP = 0
 const ACTION_CUT_POLY_AT_POINTER = 1
 const ACTION_CUT_LARGEST_POLY = 2
-const ACTION_CUT_RANDOM_POLY = 3
 
 const FLASH_LINE_INITIAL_TICKS_LEFT = 30
 
@@ -59,10 +58,6 @@ exports.set_action_cut_poly_at_pointer = function () {
 
 exports.set_action_cut_largest_poly = function () {
   action = ACTION_CUT_LARGEST_POLY
-}
-
-exports.set_action_cut_random_poly = function () {
-  action = ACTION_CUT_RANDOM_POLY
 }
 
 exports.set_params_impl = function (s) {
@@ -209,12 +204,6 @@ function tick() {
     }
   } else if (action === ACTION_CUT_LARGEST_POLY) {
     cut_n_polys()
-  } else if (action === ACTION_CUT_RANDOM_POLY) {
-    const n = params.n_cuts_per_tick
-    for (let i = 0; i < n; i++) {
-      const idx = random_int_in_range_inclusive(0, polygons.length - 1)
-      if (idx !== -1) cut_poly(idx)
-    }
   }
 }
 
