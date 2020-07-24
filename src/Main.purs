@@ -42,9 +42,12 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODOS ----------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
+-- DONE fill out advanced params
+-- DONE save image
+
+-- TODO add license
 -- TODO undo/redo
 -- TODO multitouch
--- DONE fill out advanced params
 -- TODO kbd shortcuts
 -- TODO kbd shortcuts help text/popup
 -- TODO have radio button choice for which property is controlled by x/y
@@ -52,7 +55,6 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODO set poly colour
 -- TODO save presets
 -- TODO delete poly
--- TODO save image
 -- TODO save replay
 -- TODO setting for resolution
 -- TODO mode to make split with pointer start/end pos
@@ -195,17 +197,7 @@ render st = HH.div_
             ]
         ]
     , render_control_panel_section "Misc"
-        [ HH.button
-            [ HE.onClick \_ -> Just $ Set_param_mode case st.param_mode of
-                Simple -> Advanced
-                Advanced -> Simple
-            ]
-            [ HH.text case st.param_mode of
-                Simple -> "Switch to advanced control panel"
-                Advanced -> "Switch to simple control panel"
-            ]
-        , HH.br_
-        , HH.label_
+        [ HH.label_
             [ HH.input
                 [ HP.type_ InputCheckbox
                 , HP.checked st.draw_debug_lines
@@ -221,6 +213,20 @@ render st = HH.div_
                 , HE.onClick \_ -> Just $ Set_param Toggle_draw_pointer_crosshair
                 ]
             , HH.text "Draw pointer crosshair"
+            ]
+        , HH.br_
+        , HH.button
+            [ HE.onClick \_ -> Just Save_as_png ]
+            [ HH.text "Save as png" ]
+        , HH.br_
+        , HH.button
+            [ HE.onClick \_ -> Just $ Set_param_mode case st.param_mode of
+                Simple -> Advanced
+                Advanced -> Simple
+            ]
+            [ HH.text case st.param_mode of
+                Simple -> "Switch to advanced control panel"
+                Advanced -> "Switch to simple control panel"
             ]
         , HH.br_
         , HH.button
@@ -382,6 +388,7 @@ data Action
     | Set_interaction_mode Interaction_mode
     | Set_param_mode Param_mode
     | Set_param Set_param_action
+    | Save_as_png
     | Reset_canvas
 
 data Set_param_action
@@ -463,6 +470,8 @@ handle_action = case _ of
         st <- H.get
         liftEffect $ set_params st
 
+    Save_as_png -> liftEffect save_as_png
+
     Reset_canvas -> liftEffect reset_canvas
 
 handle_set_param_action :: forall m. MonadEffect m => Set_param_action -> M m Unit
@@ -523,6 +532,7 @@ foreign import set_action_cut_largest_poly :: Effect Unit
 foreign import set_params_impl :: Raw_params -> Effect Unit
 foreign import init :: Effect Unit
 foreign import reset_canvas :: Effect Unit
+foreign import save_as_png :: Effect Unit
 
 -------------------------------------------------------------------------------
 -- Lenses ---------------------------------------------------------------------

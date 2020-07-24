@@ -73,7 +73,8 @@ exports.init = function () {
     height: DIM,
     backgroundColor: 0xffffff,
     resolution: resolution,
-    antialias: true
+    antialias: true,
+    preserveDrawingBuffer: true
   })
 
   polygons_container = new PIXI.Container()
@@ -151,6 +152,16 @@ function reset_canvas() {
 }
 
 exports.reset_canvas = reset_canvas
+
+exports.save_as_png = function() {
+  const el = document.createElement("a")
+  el.setAttribute("href", app.view.toDataURL())
+  el.setAttribute("download", "image.png")
+  el.style.display = "none"
+  document.body.appendChild(el)
+  el.click()
+  document.body.removeChild(el)
+}
 
 // TICK =======================================================================
 
