@@ -321,21 +321,13 @@ function cut_poly(poly_idx) {
     i++
   }
 
-  const hue_delta = params.hue_delta
-  const hue_delta_variance = params.hue_delta_variance
-  const hdv1 = hue_delta_variance*lerp(-1, 1, Math.random())
-  const hdv2 = hue_delta_variance*lerp(-1, 1, Math.random())
-  const h1 = (poly.h + hue_delta + hdv1 + 1)%1
-  const h2 = (poly.h + hue_delta + hdv2 + 1)%1
+  const h1 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
+  const h2 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
 
   const s = 1
 
-  const lightness_delta = params.lightness_delta
-  const lightness_delta_variance = params.lightness_delta_variance
-  const ldv1 = lightness_delta_variance*lerp(-1, 1, Math.random())
-  const ldv2 = lightness_delta_variance*lerp(-1, 1, Math.random())
-  const l1 = clamp(0, 1, poly.l + lightness_delta + ldv1)
-  const l2 = clamp(0, 1, poly.l + lightness_delta + ldv2)
+  const l1 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
+  const l2 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
 
   const p1 = mk_poly(p1_verts, h1, s, l1)
   const p2 = mk_poly(p2_verts, h2, s, l2)

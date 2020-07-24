@@ -43,7 +43,7 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 
 -- TODO undo/redo
 -- TODO multitouch
--- TODO fill out advanced params
+-- DONE fill out advanced params
 -- TODO kbd shortcuts
 -- TODO kbd shortcuts help text/popup
 -- TODO have radio button choice for which property is controlled by x/y
@@ -147,10 +147,10 @@ type Raw_params =
 type Params_R =
     ( n_cuts_per_tick :: Int
     , cut_ratio :: Number -- [0,1]
-    , hue_delta :: Number -- [0,1]
-    , hue_delta_variance :: Number
-    , lightness_delta :: Number
-    , lightness_delta_variance :: Number
+    , hue_delta_min :: Number -- [0,1]
+    , hue_delta_max :: Number
+    , lightness_delta_min :: Number
+    , lightness_delta_max :: Number
     )
 
 data SimpleCutSpeedParam = Slow | Med | Fast
@@ -162,10 +162,10 @@ initial_advanced_params :: Advanced_params
 initial_advanced_params = Advanced_params
     { n_cuts_per_tick: 3
     , cut_ratio: 0.3
-    , hue_delta: 0.0
-    , hue_delta_variance: 0.02
-    , lightness_delta: 0.01
-    , lightness_delta_variance: 0.0
+    , hue_delta_min: -0.02
+    , hue_delta_max: 0.02
+    , lightness_delta_min: -0.005
+    , lightness_delta_max: 0.005
     }
 
 -------------------------------------------------------------------------------
@@ -291,7 +291,7 @@ render_advanced_params (Advanced_params params) = HH.div_
             [ HP.type_ InputRange
             , HP.min 0.0
             , HP.max 1.0
-            , HP.step $ Step 0.05
+            , HP.step $ Step 0.01
             , HP.value $ show params.cut_ratio
             , HE.onValueInput \str -> do
                 n <- Number.fromString str
@@ -300,64 +300,58 @@ render_advanced_params (Advanced_params params) = HH.div_
         , HH.text $ show params.cut_ratio
         ]
     , render_control_panel_section "Hue delta"
-        let hue_delta_display_scale = 1000.0
-        in
         [ HH.input
             [ HP.type_ InputRange
-            , HP.min (-1.0)
-            , HP.max 1.0
-            , HP.step $ Step 0.002
-            , HP.value $ show $ params.hue_delta * hue_delta_display_scale
+            , HP.min (-0.5)
+            , HP.max 0.5
+            , HP.step $ Step 0.001
+            , HP.value $ show $ params.hue_delta_min
             , HE.onValueInput \str -> do
                 n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_hue_delta $ n / hue_delta_display_scale
+                pure $ Set_param $ Set_advanced_hue_delta_min $ min params.hue_delta_max n
             ]
-        , HH.text $ show $ params.hue_delta
-        ]
-    , render_control_panel_section "Hue delta variance"
-        let hue_delta_variance_display_scale = 10.0
-        in
-        [ HH.input
+        , HH.input
             [ HP.type_ InputRange
-            , HP.min 0.0
-            , HP.max 1.0
-            , HP.step $ Step 0.01
-            , HP.value $ show $ params.hue_delta_variance * hue_delta_variance_display_scale
+            , HP.min (-0.5)
+            , HP.max 0.5
+            , HP.step $ Step 0.001
+            , HP.value $ show $ params.hue_delta_max
             , HE.onValueInput \str -> do
                 n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_hue_delta_variance $ n / hue_delta_variance_display_scale
+                pure $ Set_param $ Set_advanced_hue_delta_max $ max params.hue_delta_min n
             ]
-        , HH.text $ show $ params.hue_delta_variance
+        , HH.text $
+            "[" <> show params.hue_delta_min
+            <> ", "
+            <> show params.hue_delta_max
+            <> "]"
         ]
     , render_control_panel_section "Lightness delta"
-        let lightness_delta_display_scale = 100.0
-        in
         [ HH.input
             [ HP.type_ InputRange
-            , HP.min (-1.0)
-            , HP.max 1.0
-            , HP.step $ Step 0.002
-            , HP.value $ show $ params.lightness_delta * lightness_delta_display_scale
+            , HP.min (-0.03)
+            , HP.max 0.03
+            , HP.step $ Step 0.001
+            , HP.value $ show $ params.lightness_delta_min
             , HE.onValueInput \str -> do
                 n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_lightness_delta $ n / lightness_delta_display_scale
+                pure $ Set_param $ Set_advanced_lightness_delta_min $ min params.hue_delta_max n
             ]
-        , HH.text $ show params.lightness_delta
-        ]
-    , render_control_panel_section "Lightness delta variance"
-        let lightness_delta_variance_display_scale = 10.0
-        in
-        [ HH.input
+        , HH.input
             [ HP.type_ InputRange
-            , HP.min 0.0
-            , HP.max 1.0
-            , HP.step $ Step 0.01
-            , HP.value $ show $ params.lightness_delta_variance * lightness_delta_variance_display_scale
+            , HP.min (-0.03)
+            , HP.max 0.03
+            , HP.step $ Step 0.001
+            , HP.value $ show $ params.lightness_delta_max
             , HE.onValueInput \str -> do
                 n <- Number.fromString str
-                pure $ Set_param $ Set_advanced_lightness_delta_variance $ n / lightness_delta_variance_display_scale
+                pure $ Set_param $ Set_advanced_lightness_delta_max $ max params.hue_delta_min n
             ]
-        , HH.text $ show params.lightness_delta_variance
+        , HH.text $
+            "[" <> show params.lightness_delta_min
+            <> ", "
+            <> show params.lightness_delta_max
+            <> "]"
         ]
     ]
 
@@ -394,10 +388,10 @@ data Set_param_action
     | Set_simple_lightness_change SimpleLightnessChangeParam
     | Set_advanced_n_cuts_per_tick Int
     | Set_advanced_cut_ratio Number
-    | Set_advanced_hue_delta Number
-    | Set_advanced_hue_delta_variance Number
-    | Set_advanced_lightness_delta Number
-    | Set_advanced_lightness_delta_variance Number
+    | Set_advanced_hue_delta_min Number
+    | Set_advanced_hue_delta_max Number
+    | Set_advanced_lightness_delta_min Number
+    | Set_advanced_lightness_delta_max Number
     | Toggle_draw_debug_lines
     | Toggle_draw_pointer_crosshair
 
@@ -472,10 +466,10 @@ handle_set_param_action = case _ of
     Set_simple_lightness_change x -> H.modify_ $ Lens.set _simple_lightness_change x
     Set_advanced_n_cuts_per_tick n -> H.modify_ $ Lens.set _advanced_n_cuts_per_tick n
     Set_advanced_cut_ratio n -> H.modify_ $ Lens.set _advanced_cut_ratio n
-    Set_advanced_hue_delta n -> H.modify_ $ Lens.set _advanced_hue_delta n
-    Set_advanced_hue_delta_variance n -> H.modify_ $ Lens.set _advanced_hue_delta_variance n
-    Set_advanced_lightness_delta n -> H.modify_ $ Lens.set _advanced_lightness_delta n
-    Set_advanced_lightness_delta_variance n -> H.modify_ $ Lens.set _advanced_lightness_delta_variance n
+    Set_advanced_hue_delta_min n -> H.modify_ $ Lens.set _advanced_hue_delta_min n
+    Set_advanced_hue_delta_max n -> H.modify_ $ Lens.set _advanced_hue_delta_max n
+    Set_advanced_lightness_delta_min n -> H.modify_ $ Lens.set _advanced_lightness_delta_min n
+    Set_advanced_lightness_delta_max n -> H.modify_ $ Lens.set _advanced_lightness_delta_max n
     Toggle_draw_debug_lines -> H.modify_ $ Lens.over _draw_debug_lines not
     Toggle_draw_pointer_crosshair -> H.modify_ $ Lens.over _draw_pointer_crosshair not
 
@@ -483,6 +477,18 @@ set_params :: State -> Effect Unit
 set_params st = set_params_impl case st.param_mode of
     Simple ->
         let Simple_params ps = st.simple_params
+            hue_delta = case ps.colour_change of
+                Tiny -> 0.002
+                Moderate -> 0.03
+                Pretty_much_random -> 0.5
+            { min: lightness_delta_min, max: lightness_delta_max } = case ps.cut_angle, ps.lightness_change of
+                Very_uneven, Get_darker -> { min: -0.001, max: 0.0 }
+                Very_uneven, Get_lighter -> { min: 0.0, max: 0.001 }
+                A_bit_uneven, Get_darker -> { min: -0.004, max: 0.0 }
+                A_bit_uneven, Get_lighter -> { min: 0.0, max: 0.004 }
+                Even, Get_darker -> { min: -0.03, max: 0.0 }
+                Even, Get_lighter -> { min: 0.0, max: 0.03 }
+                _, Stay_same -> { min: 0.0, max: 0.0 }
         in
         { n_cuts_per_tick: case ps.cut_speed of
             Slow -> 1
@@ -492,23 +498,10 @@ set_params st = set_params_impl case st.param_mode of
             Very_uneven -> 0.25
             A_bit_uneven -> 0.4
             Even -> 1.0
-        , hue_delta: case ps.colour_change of
-            Tiny -> 0.00001
-            Moderate -> 0.0003
-            Pretty_much_random -> 0.001
-        , hue_delta_variance: case ps.colour_change of
-            Tiny -> 0.002
-            Moderate -> 0.03
-            Pretty_much_random -> 0.1
-        , lightness_delta: case ps.cut_angle, ps.lightness_change of
-            Very_uneven, Get_darker -> -0.001
-            Very_uneven, Get_lighter -> 0.001
-            A_bit_uneven, Get_darker -> -0.004
-            A_bit_uneven, Get_lighter -> 0.004
-            Even, Get_darker -> -0.03
-            Even, Get_lighter -> 0.03
-            _, Stay_same -> 0.0
-        , lightness_delta_variance: 0.005
+        , hue_delta_min: -hue_delta
+        , hue_delta_max: hue_delta
+        , lightness_delta_min: lightness_delta_min
+        , lightness_delta_max: lightness_delta_max
         , draw_debug_lines: st.draw_debug_lines
         , draw_pointer_crosshair: st.draw_pointer_crosshair
         }
@@ -561,17 +554,17 @@ _advanced_n_cuts_per_tick = _advanced_params <<< _Newtype <<< prop (SProxy :: SP
 _advanced_cut_ratio :: Lens' State Number
 _advanced_cut_ratio = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "cut_ratio")
 
-_advanced_hue_delta :: Lens' State Number
-_advanced_hue_delta = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta")
+_advanced_hue_delta_min :: Lens' State Number
+_advanced_hue_delta_min = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta_min")
 
-_advanced_hue_delta_variance :: Lens' State Number
-_advanced_hue_delta_variance = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta_variance")
+_advanced_hue_delta_max :: Lens' State Number
+_advanced_hue_delta_max = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta_max")
 
-_advanced_lightness_delta :: Lens' State Number
-_advanced_lightness_delta = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta")
+_advanced_lightness_delta_min :: Lens' State Number
+_advanced_lightness_delta_min = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta_min")
 
-_advanced_lightness_delta_variance :: Lens' State Number
-_advanced_lightness_delta_variance = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta_variance")
+_advanced_lightness_delta_max :: Lens' State Number
+_advanced_lightness_delta_max = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta_max")
 
 _draw_debug_lines :: Lens' State Boolean
 _draw_debug_lines = prop (SProxy :: SProxy "draw_debug_lines")
