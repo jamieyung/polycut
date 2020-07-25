@@ -149,7 +149,7 @@ function reset_canvas() {
   }
   const h = Math.random()
   const s = Math.random()
-  const l = Math.random()
+  const l = lerp(0.1, 0.6, Math.random())
   const first_poly = mk_poly([p00, p10, p11, p01], h, s, l)
   polygons_container.addChild(first_poly.poly)
   polygons = [first_poly]

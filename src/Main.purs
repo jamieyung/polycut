@@ -134,8 +134,8 @@ newtype Simple_params = Simple_params
 initial_simple_params :: Simple_params
 initial_simple_params = Simple_params
     { cut_speed: Med
-    , cut_angle: A_bit_uneven
-    , colour_change: Moderate
+    , cut_angle: Very_uneven
+    , colour_change: Tiny
     , lightness_change: Get_lighter
     }
 
@@ -495,14 +495,14 @@ set_params st = set_params_impl case st.param_mode of
     Simple ->
         let Simple_params ps = st.simple_params
             hue_delta = case ps.colour_change of
-                Tiny -> 0.002
+                Tiny -> 0.005
                 Moderate -> 0.03
                 Pretty_much_random -> 0.5
             { min: lightness_delta_min, max: lightness_delta_max } = case ps.cut_angle, ps.lightness_change of
-                Very_uneven, Get_darker -> { min: -0.001, max: 0.0 }
-                Very_uneven, Get_lighter -> { min: 0.0, max: 0.001 }
-                A_bit_uneven, Get_darker -> { min: -0.004, max: 0.0 }
-                A_bit_uneven, Get_lighter -> { min: 0.0, max: 0.004 }
+                Very_uneven, Get_darker -> { min: -0.003, max: 0.0 }
+                Very_uneven, Get_lighter -> { min: 0.0, max: 0.003 }
+                A_bit_uneven, Get_darker -> { min: -0.01, max: 0.0 }
+                A_bit_uneven, Get_lighter -> { min: 0.0, max: 0.01 }
                 Even, Get_darker -> { min: -0.03, max: 0.0 }
                 Even, Get_lighter -> { min: 0.0, max: 0.03 }
                 _, Stay_same -> { min: 0.0, max: 0.0 }
@@ -512,8 +512,8 @@ set_params st = set_params_impl case st.param_mode of
             Med -> 5
             Fast -> 20
         , cut_ratio: case ps.cut_angle of
-            Very_uneven -> 0.12
-            A_bit_uneven -> 0.2
+            Very_uneven -> 0.18
+            A_bit_uneven -> 0.35
             Even -> 0.5
         , hue_delta_min: -hue_delta
         , hue_delta_max: hue_delta
