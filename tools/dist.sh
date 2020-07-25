@@ -1,4 +1,4 @@
-# run from the root dir
+# # run from the root dir
 
 # clear dist dir ===============================================================
 
@@ -38,7 +38,7 @@ cache_bust()
 {
     FILENAME=$1
     EXT=$2
-    HASH=($(md5sum dist/$FILENAME.$EXT))
+    HASH=`md5sum dist/$FILENAME.$EXT | awk '{ print $1 }'`
     FILENAME_WITH_HASH=$FILENAME.$HASH.$EXT
     mv dist/$FILENAME.$EXT dist/$FILENAME_WITH_HASH
     sed -i "s/$FILENAME.$EXT/$FILENAME_WITH_HASH/g" dist/index.html
