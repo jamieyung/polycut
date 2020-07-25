@@ -109,6 +109,7 @@ data Param_mode = Simple | Advanced
 data Interaction_mode
     = Cut_poly_at_pointer
     | Cut_largest_poly
+    | Delete_poly_at_pointer
 
 initial_state :: State
 initial_state =
@@ -187,13 +188,14 @@ _slider = SProxy :: SProxy "slider"
 render :: forall m. MonadAff m => State -> Html m
 render st = HH.div_
     [ render_control_panel_section "Interaction mode"
-        [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly] # map \x -> HH.button
+        [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly, Delete_poly_at_pointer] # map \x -> HH.button
             [ HE.onClick \_ -> Just $ Set_interaction_mode x
             , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == st.interaction_mode then [ ClassName "focused_button" ] else []
             ]
             [ HH.text case x of
                 Cut_poly_at_pointer -> "Cut poly at pointer"
                 Cut_largest_poly -> "Cut largest poly"
+                Delete_poly_at_pointer -> "Delete poly at pointer"
             ]
         ]
     , render_control_panel_section "Misc"
@@ -452,6 +454,7 @@ handle_action = case _ of
         case st.interaction_mode of
             Cut_poly_at_pointer -> liftEffect set_action_cut_poly_at_pointer
             Cut_largest_poly -> liftEffect set_action_cut_largest_poly
+            Delete_poly_at_pointer -> liftEffect set_action_delete_poly_at_pointer
         H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
 
     Handle_pointer_up -> do
@@ -529,6 +532,7 @@ foreign import update_px_py :: Fn2 Int Int (Effect { px_pct :: Number, py_pct ::
 foreign import set_action_no_op :: Effect Unit
 foreign import set_action_cut_poly_at_pointer :: Effect Unit
 foreign import set_action_cut_largest_poly :: Effect Unit
+foreign import set_action_delete_poly_at_pointer :: Effect Unit
 foreign import set_params_impl :: Raw_params -> Effect Unit
 foreign import init :: Effect Unit
 foreign import reset_canvas :: Effect Unit

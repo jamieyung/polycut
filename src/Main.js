@@ -7,6 +7,7 @@ const DIM = 800
 const ACTION_NO_OP = 0
 const ACTION_CUT_POLY_AT_POINTER = 1
 const ACTION_CUT_LARGEST_POLY = 2
+const ACTION_DELETE_POLY_AT_POINTER = 3
 
 const FLASH_LINE_INITIAL_TICKS_LEFT = 30
 
@@ -58,6 +59,10 @@ exports.set_action_cut_poly_at_pointer = function () {
 
 exports.set_action_cut_largest_poly = function () {
   action = ACTION_CUT_LARGEST_POLY
+}
+
+exports.set_action_delete_poly_at_pointer = function () {
+  action = ACTION_DELETE_POLY_AT_POINTER
 }
 
 exports.set_params_impl = function (s) {
@@ -139,6 +144,9 @@ function reset_canvas() {
   lines = [mk_line(p00, p10), mk_line(p10, p11), mk_line(p11, p01), mk_line(p01, p00)]
   flash_lines = []
 
+  for (const poly of polygons) {
+    polygons_container.removeChild(poly.poly)
+  }
   const h = Math.random()
   const s = Math.random()
   const l = Math.random()
@@ -215,6 +223,13 @@ function tick() {
     }
   } else if (action === ACTION_CUT_LARGEST_POLY) {
     cut_n_polys()
+  } else if (action === ACTION_DELETE_POLY_AT_POINTER) {
+      const idx = get_poly_at_pointer()
+      if (idx !== -1) {
+        var poly = polygons[idx]
+        polygons_container.removeChild(poly.poly)
+        polygons.splice(idx, 1)
+      }
   }
 }
 
