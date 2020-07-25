@@ -6,11 +6,11 @@ rm -rf dist
 
 # build dist/app.js ============================================================
 
-spago bundle-app --to dist/app.js
+PATH=$PATH:./node_modules/.bin node_modules/.bin/spago bundle-app --to dist/app.js
 
 # build dist/app.css ===========================================================
 
-sass src/stylesheets:dist --no-source-map
+node_modules/.bin/sass src/stylesheets:dist --no-source-map
 
 # post-process dist/app.css ====================================================
 

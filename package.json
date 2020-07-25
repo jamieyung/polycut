@@ -7,6 +7,9 @@
     "babel-minify": "^0.5.1",
     "cssnano-cli": "^1.0.5",
     "html-minifier": "^4.0.0",
-    "postcss-cli": "^7.1.1"
+    "postcss-cli": "^7.1.1",
+    "purescript": "^0.13.8",
+    "sass": "^1.26.10",
+    "spago": "^0.15.3"
   }
 }
