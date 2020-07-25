@@ -5,6 +5,8 @@
   "devDependencies": {
     "autoprefixer": "^9.8.5",
     "babel-minify": "^0.5.1",
+    "cssnano-cli": "^1.0.5",
+    "html-minifier": "^4.0.0",
     "postcss-cli": "^7.1.1"
   }
 }
