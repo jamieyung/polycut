@@ -268,7 +268,7 @@ function cut_poly(poly_idx) {
   let tmpvvert = pt(0, 0)
   for (let i = 0; i < 10; i++) {
     const pct_u = Math.random()
-    const pct_v = pct_u+0.5*params.cut_ratio
+    const pct_v = pct_u+params.cut_ratio
     tmpuidx = calc_vert_at_pct_along_perimeter(poly, pct_u, tmpuvert)
     tmpvidx = calc_vert_at_pct_along_perimeter(poly, pct_v, tmpvvert)
     if (tmpuidx == tmpvidx) continue

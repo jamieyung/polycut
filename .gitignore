@@ -1,7 +1,9 @@
-Session.vim
 .psc-ide-port
 .purs-repl
 .spago/
+Session.vim
+dist/
+node_modules/
 output/
-web/app.js
 web/app.css
+web/app.js

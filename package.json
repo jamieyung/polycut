@@ -1,0 +1,10 @@
+{
+  "name": "polycut",
+  "version": "1.0.0",
+  "dependencies": {},
+  "devDependencies": {
+    "autoprefixer": "^9.8.5",
+    "babel-minify": "^0.5.1",
+    "postcss-cli": "^7.1.1"
+  }
+}

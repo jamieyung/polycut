@@ -148,7 +148,7 @@ type Raw_params =
 
 type Params_R =
     ( n_cuts_per_tick :: Int
-    , cut_ratio :: Number -- [0,1]
+    , cut_ratio :: Number -- [0,0.5]
     , hue_delta_min :: Number -- [0,1]
     , hue_delta_max :: Number
     , lightness_delta_min :: Number
@@ -163,11 +163,11 @@ data SimpleLightnessChangeParam = Get_darker | Stay_same | Get_lighter
 initial_advanced_params :: Advanced_params
 initial_advanced_params = Advanced_params
     { n_cuts_per_tick: 3
-    , cut_ratio: 0.3
-    , hue_delta_min: -0.02
-    , hue_delta_max: 0.02
-    , lightness_delta_min: -0.005
-    , lightness_delta_max: 0.005
+    , cut_ratio: 0.12
+    , hue_delta_min: 0.0
+    , hue_delta_max: 0.01
+    , lightness_delta_min: 0.0
+    , lightness_delta_max: 0.002
     }
 
 -------------------------------------------------------------------------------
@@ -309,7 +309,7 @@ render_advanced_params (Advanced_params params) = HH.div_
             , start: [ params.cut_ratio ]
             , range:
                 { min: 0.0
-                , max: 1.0
+                , max: 0.5
                 , non_linear: []
                 }
             } case _ of
@@ -509,9 +509,9 @@ set_params st = set_params_impl case st.param_mode of
             Med -> 5
             Fast -> 20
         , cut_ratio: case ps.cut_angle of
-            Very_uneven -> 0.25
-            A_bit_uneven -> 0.4
-            Even -> 1.0
+            Very_uneven -> 0.12
+            A_bit_uneven -> 0.2
+            Even -> 0.5
         , hue_delta_min: -hue_delta
         , hue_delta_max: hue_delta
         , lightness_delta_min: lightness_delta_min
