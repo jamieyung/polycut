@@ -32,7 +32,7 @@ import Slider (format_as_percentage)
 import Slider as Slider
 import Util (Hsl_to_hex, Number_range, hsl_to_hex, n_decimal_places_for_hue_and_lightness, render_range)
 import Web.DOM.ParentNode (QuerySelector(..))
-import Web.Event.Event (Event, EventType(..), preventDefault, stopPropagation)
+import Web.Event.Event (Event, EventType(..), stopPropagation)
 import Web.Event.EventTarget (EventTarget)
 import Web.TouchEvent.EventTypes (touchcancel, touchend, touchmove, touchstart)
 import Web.TouchEvent.Touch as T
@@ -103,7 +103,7 @@ component = H.mkComponent
         , pointer_is_down: false
         , draw_debug_lines: false
         , draw_pointer_crosshair: false
-        , m_dialog_state: Nothing
+        , m_dialog_state: Just DS_welcome_message
         , history_size: 0
         , last_executed_command_idx: -1
         }
@@ -154,6 +154,7 @@ data Dialog_state
     | DS_cut_ratio_explanation Explanation_depth
     | DS_hue_delta_explanation
     | DS_lightness_delta_explanation
+    | DS_welcome_message
 
 data Explanation_depth = Simple | Nerdy
 
@@ -417,6 +418,7 @@ render_dialog_ st ds =
                 DS_cut_ratio_explanation _ -> "Cut ratio"
                 DS_hue_delta_explanation -> "Colour change"
                 DS_lightness_delta_explanation -> "Lightness change"
+                DS_welcome_message -> "Welcome!"
             , HH.i
                 [ HP.classes $ map ClassName [ "fas", "fa-times", "close-btn" ]
                 , HP.tabIndex 0
@@ -505,6 +507,37 @@ render_dialog_ st ds =
                     , HH.b_ [ HH.text "Cut ratio" ]
                     , HH.text "."
                     ]
+                ]
+
+            DS_welcome_message ->
+                [ HH.p_ [ HH.b_ [ HH.text "Hello!" ] ]
+                , HH.p_
+                    [ HH.text "This is a "
+                    , HH.a
+                        [ HP.href "https://www.reddit.com/r/generative"
+                        , HP.target "_blank"
+                        ]
+                        [ HH.text "generative art" ]
+                    , HH.text " tool based on the idea of cutting shapes (polygons) into smaller pieces. It was inspired by "
+                    , HH.a
+                        [ HP.href "http://piterpasma.nl/articles/polysub"
+                        , HP.target "_blank"
+                        ]
+                        [ HH.text "this" ]
+                    , HH.text " blog post by Piter Pasma."
+                    ]
+
+                , HH.br_
+                , HH.p_ [ HH.b_ [ HH.text "How to use it" ] ]
+                , HH.p_ [ HH.text "Click/touch the coloured square to cut it into smaller pieces." ]
+                , HH.p_ [ HH.text "There are sliders to control things like how even the cuts are, how the colour changes, how the lightness changes, etc." ]
+
+                , HH.br_
+                , HH.p_ [ HH.b_ [ HH.text "If you get confused or want explanations" ] ]
+                , HH.p_ [ HH.text "Most of the parameters have explanations, accessible via the question mark icon next to the name. I'm planning on adding more helpful features like sensible presets; stay tuned." ]
+
+                , HH.br_
+                , HH.p_ [ HH.text "Have fun!" ]
                 ]
         ]
     ]
@@ -614,10 +647,7 @@ handle_action = case _ of
 
     Reset_canvas -> liftEffect reset_canvas
 
-    Dialog_NoOp me -> do
-        let e = ME.toEvent me
-        liftEffect $ stopPropagation e
-        liftEffect $ preventDefault e
+    Dialog_NoOp e -> liftEffect $ stopPropagation $ ME.toEvent e
 
     Set_dialog_state m -> H.modify_ $ Lens.set (prop (SProxy :: SProxy "m_dialog_state")) m
 

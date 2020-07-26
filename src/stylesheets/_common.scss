@@ -16,3 +16,7 @@ $border-radius-md: 7px;
     flex-direction: row;
     justify-content: center;
 }
+
+input[type=radio] {
+    margin-right: $pad-xs;
+}
