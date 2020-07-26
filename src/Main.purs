@@ -13,12 +13,12 @@ import Data.Lens as Lens
 import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (class Newtype, unwrap)
+import Data.Newtype (class Newtype)
+import Data.Number as Number
 import Data.Symbol (SProxy(..))
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect, liftEffect)
-import Global (toFixed)
 import Halogen (ClassName(..))
 import Halogen as H
 import Halogen.Aff as HA
@@ -27,14 +27,17 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.Query.EventSource (eventListenerEventSource)
 import Halogen.VDom.Driver (runUI)
-import Record as Record
+import Math (abs)
+import Slider (format_as_percentage)
 import Slider as Slider
 import Web.DOM.ParentNode (QuerySelector(..))
+import Web.Event.Event (stopPropagation)
 import Web.Event.EventTarget (EventTarget)
 import Web.TouchEvent.EventTypes (touchcancel, touchend, touchmove, touchstart)
 import Web.TouchEvent.Touch as T
 import Web.TouchEvent.TouchEvent as TE
 import Web.TouchEvent.TouchList as TL
+import Web.UIEvent.MouseEvent (MouseEvent)
 import Web.UIEvent.MouseEvent as ME
 import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 
@@ -42,7 +45,6 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODOS ----------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
--- DONE fill out advanced params
 -- DONE save image
 
 -- TODO add license
@@ -72,11 +74,25 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 main :: Effect Unit
 main = HA.runHalogenAff do
     HA.awaitLoad
-    HA.selectElement (QuerySelector "#control_panel") >>= traverse_ (runUI component unit)
+    HA.selectElement (QuerySelector "body") >>= traverse_ (runUI component unit)
 
 component :: forall m. MonadAff m => H.Component HH.HTML (Const Void) Unit Void m
 component = H.mkComponent
-    { initialState: const initial_state
+    { initialState: \_ ->
+        { params: Params
+            { n_cuts_per_tick: 3
+            , cut_ratio: 0.12
+            , hue_delta: { min: 0.0, max: 0.01 }
+            , lightness_delta: { min: 0.0, max: 0.002 }
+            }
+        , interaction_mode: Cut_poly_at_pointer
+        , px_pct: 0.0
+        , py_pct: 0.0
+        , pointer_is_down: false
+        , draw_debug_lines: false
+        , draw_pointer_crosshair: false
+        , m_dialog_state: Nothing
+        }
     , render
     , eval: H.mkEval $ H.defaultEval
         { initialize = Just Initialize
@@ -93,83 +109,39 @@ type Html m = H.ComponentHTML Action Child_slots m
 -------------------------------------------------------------------------------
 
 type State =
-    { simple_params :: Simple_params
-    , advanced_params :: Advanced_params
-    , param_mode :: Param_mode
+    { params :: Params
     , interaction_mode :: Interaction_mode
     , px_pct :: Number
     , py_pct :: Number
     , pointer_is_down :: Boolean
     , draw_debug_lines :: Boolean
     , draw_pointer_crosshair :: Boolean
+    , m_dialog_state :: Maybe Dialog_state
     }
-
-data Param_mode = Simple | Advanced
 
 data Interaction_mode
     = Cut_poly_at_pointer
     | Cut_largest_poly
     | Delete_poly_at_pointer
+    | Change_poly_colour_at_pointer
 
-initial_state :: State
-initial_state =
-    { simple_params: initial_simple_params
-    , advanced_params: initial_advanced_params
-    , param_mode: Simple
-    , interaction_mode: Cut_poly_at_pointer
-    , px_pct: 0.0
-    , py_pct: 0.0
-    , pointer_is_down: false
-    , draw_debug_lines: false
-    , draw_pointer_crosshair: false
-    }
-
-newtype Simple_params = Simple_params
-    { cut_speed :: SimpleCutSpeedParam
-    , cut_angle :: SimpleCutAngleParam
-    , colour_change :: SimpleColourChangeParam
-    , lightness_change :: SimpleLightnessChangeParam
-    }
-
-initial_simple_params :: Simple_params
-initial_simple_params = Simple_params
-    { cut_speed: Med
-    , cut_angle: Very_uneven
-    , colour_change: Tiny
-    , lightness_change: Get_lighter
-    }
-
-newtype Advanced_params = Advanced_params (Record Params_R)
-
-type Raw_params =
-    { draw_debug_lines :: Boolean
-    , draw_pointer_crosshair :: Boolean
-    | Params_R
-    }
-
-type Params_R =
-    ( n_cuts_per_tick :: Int
+newtype Params = Params
+    { n_cuts_per_tick :: Int
     , cut_ratio :: Number -- [0,0.5]
-    , hue_delta_min :: Number -- [0,1]
-    , hue_delta_max :: Number
-    , lightness_delta_min :: Number
-    , lightness_delta_max :: Number
-    )
-
-data SimpleCutSpeedParam = Slow | Med | Fast
-data SimpleCutAngleParam = Very_uneven | A_bit_uneven | Even
-data SimpleColourChangeParam = Tiny | Moderate | Pretty_much_random
-data SimpleLightnessChangeParam = Get_darker | Stay_same | Get_lighter
-
-initial_advanced_params :: Advanced_params
-initial_advanced_params = Advanced_params
-    { n_cuts_per_tick: 3
-    , cut_ratio: 0.12
-    , hue_delta_min: 0.0
-    , hue_delta_max: 0.01
-    , lightness_delta_min: 0.0
-    , lightness_delta_max: 0.002
+    , hue_delta :: Number_range -- [-0.5,0.5]
+    , lightness_delta :: Number_range -- [-1,1]
     }
+
+type Number_range = { min :: Number, max :: Number }
+
+data Dialog_state
+    = DS_interaction_mode_explanation Interaction_mode
+    | DS_n_cuts_per_tick_explanation
+    | DS_cut_ratio_explanation Explanation_depth
+    | DS_hue_delta_explanation
+    | DS_lightness_delta_explanation
+
+data Explanation_depth = Simple | Nerdy
 
 -------------------------------------------------------------------------------
 -- Slots ----------------------------------------------------------------------
@@ -186,197 +158,313 @@ _slider = SProxy :: SProxy "slider"
 -------------------------------------------------------------------------------
 
 render :: forall m. MonadAff m => State -> Html m
-render st = HH.div_
-    [ render_control_panel_section "Interaction mode"
-        [ button_bar $ [Cut_poly_at_pointer, Cut_largest_poly, Delete_poly_at_pointer] # map \x -> HH.button
-            [ HE.onClick \_ -> Just $ Set_interaction_mode x
-            , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == st.interaction_mode then [ ClassName "focused_button" ] else []
-            ]
-            [ HH.text case x of
-                Cut_poly_at_pointer -> "Cut poly at pointer"
-                Cut_largest_poly -> "Cut largest poly"
-                Delete_poly_at_pointer -> "Delete poly at pointer"
-            ]
-        ]
-    , render_control_panel_section "Misc"
-        [ HH.label_
-            [ HH.input
-                [ HP.type_ InputCheckbox
-                , HP.checked st.draw_debug_lines
-                , HE.onClick \_ -> Just $ Set_param Toggle_draw_debug_lines
-                ]
-            , HH.text "Draw debug lines"
-            ]
-        , HH.br_
-        , HH.label_
-            [ HH.input
-                [ HP.type_ InputCheckbox
-                , HP.checked st.draw_pointer_crosshair
-                , HE.onClick \_ -> Just $ Set_param Toggle_draw_pointer_crosshair
-                ]
-            , HH.text "Draw pointer crosshair"
-            ]
-        , HH.br_
-        , HH.button
-            [ HE.onClick \_ -> Just Save_as_png ]
-            [ HH.text "Save as png" ]
-        , HH.br_
-        , HH.button
-            [ HE.onClick \_ -> Just $ Set_param_mode case st.param_mode of
-                Simple -> Advanced
-                Advanced -> Simple
-            ]
-            [ HH.text case st.param_mode of
-                Simple -> "Switch to advanced control panel"
-                Advanced -> "Switch to simple control panel"
-            ]
-        , HH.br_
-        , HH.button
-            [ HE.onClick \_ -> Just Reset_canvas ]
-            [ HH.text "Reset canvas" ]
-        ]
-    , case st.param_mode of
-        Simple -> render_simple_params st.simple_params
-        Advanced -> render_advanced_params st.advanced_params
+render st = HH.div
+    [ HP.id_ "root" ]
+    [ HH.div [ HP.id_ "canvas_container" ] []
+    , render_control_panel st
+    , render_dialog st
     ]
 
-render_simple_params :: forall m. Simple_params -> Html m
-render_simple_params (Simple_params params) = HH.div []
-    [ render_control_panel_section "Cut speed"
-        [ button_bar $ [Slow, Med, Fast] # map \x -> HH.button
-            [ HE.onClick \_ -> Just $ Set_param $ Set_simple_cut_speed x
-            , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == params.cut_speed then [ ClassName "focused_button" ] else []
-            ]
-            [ HH.text case x of
-                Slow -> "Slow"
-                Med -> "Med"
-                Fast -> "Fast"
-            ]
-        ]
-    , render_control_panel_section "Cut angle"
-        [ button_bar $ [Very_uneven, A_bit_uneven, Even] # map \x -> HH.button
-            [ HE.onClick \_ -> Just $ Set_param $ Set_simple_cut_angle x
-            , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == params.cut_angle then [ ClassName "focused_button" ] else []
-            ]
-            [ HH.text case x of
-                Very_uneven -> "Very uneven"
-                A_bit_uneven -> "A bit uneven"
-                Even -> "Even"
-            ]
-        ]
-    , render_control_panel_section "Colour change"
-        [ button_bar $ [Tiny, Moderate, Pretty_much_random] # map \x -> HH.button
-            [ HE.onClick \_ -> Just $ Set_param $ Set_simple_colour_change x
-            , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == params.colour_change then [ ClassName "focused_button" ] else []
-            ]
-            [ HH.text case x of
-                Tiny -> "Tiny"
-                Moderate -> "Moderate"
-                Pretty_much_random -> "Pretty much random"
-            ]
-        ]
-    , render_control_panel_section "Lightness change"
-        [ button_bar $ [Get_darker, Stay_same, Get_lighter] # map \x -> HH.button
-            [ HE.onClick \_ -> Just $ Set_param $ Set_simple_lightness_change x
-            , HP.classes $ [ ClassName "btn_bar_btn" ] <> if x == params.lightness_change then [ ClassName "focused_button" ] else []
-            ]
-            [ HH.text case x of
-                Get_darker -> "Get darker"
-                Stay_same -> "Stay the same"
-                Get_lighter -> "Get lighter"
-            ]
-        ]
-    ]
-
-render_advanced_params :: forall m. MonadAff m => Advanced_params -> Html m
-render_advanced_params (Advanced_params params) = HH.div_
-    [ render_control_panel_section "# cuts per tick"
-        [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
-            { id: "n_cuts_per_tick_slider"
-            , start: [ Int.toNumber params.n_cuts_per_tick ]
-            , range:
-                { min: 1.0
-                , max: 30.0
-                , non_linear: []
-                }
-            } case _ of
-                Slider.Slider_updated arr -> do
-                    v <- A.index arr 0
-                    pure $ Set_param $ Set_advanced_n_cuts_per_tick $ Int.floor v
-        , HH.text $ show params.n_cuts_per_tick
-        ]
-    , render_control_panel_section "Cut ratio"
-        [ HH.slot _slider "cut_ratio_slider" Slider.component
-            { id: "cut_ratio_slider"
-            , start: [ params.cut_ratio ]
-            , range:
-                { min: 0.0
-                , max: 0.5
-                , non_linear: []
-                }
-            } case _ of
-                Slider.Slider_updated arr -> do
-                    v <- A.index arr 0
-                    pure $ Set_param $ Set_advanced_cut_ratio v
-        , HH.text $ fromMaybe "" $ toFixed 5 params.cut_ratio
-        ]
-    , render_control_panel_section "Hue delta"
-        [ HH.slot _slider "hue_delta_slider" Slider.component
-            { id: "hue_delta_slider"
-            , start: [ params.hue_delta_min, params.hue_delta_max ]
-            , range:
-                { min: -0.5
-                , max: 0.5
-                , non_linear:
-                    [ { k: "15%", v: -0.001, step: 0.00001 }
-                    , { k: "85%", v: 0.001, step: 0.001 }
+render_control_panel :: forall m. MonadAff m => State -> Html m
+render_control_panel st = HH.div
+    [ HP.id_ "control_panel" ]
+    [ render_control_panel_section
+        { m_on_help_clicked: Nothing
+        , title: "Misc. options"
+        , children:
+            [ HH.label_
+                [ HH.input
+                    [ HP.type_ InputCheckbox
+                    , HP.checked st.draw_debug_lines
+                    , HE.onClick \_ -> Just $ Set_param Toggle_draw_debug_lines
                     ]
-                }
-            } case _ of
-                Slider.Slider_updated arr -> do
-                    u <- A.index arr 0
-                    v <- A.index arr 1
-                    pure $ Set_param $ Set_advanced_hue_delta u v
-        , HH.text $ render_range params.hue_delta_min params.hue_delta_max
-        ]
-    , render_control_panel_section "Lightness delta"
-        [ HH.slot _slider "lightness_delta_slider" Slider.component
-            { id: "lightness_delta_slider"
-            , start: [ params.lightness_delta_min, params.lightness_delta_max ]
-            , range:
-                { min: -0.03
-                , max: 0.03
-                , non_linear:
-                    [ { k: "15%", v: -0.001, step: 0.00001 }
-                    , { k: "85%", v: 0.001, step: 0.001 }
+                , HH.text "Draw debug lines"
+                ]
+            , HH.br_
+            , HH.label_
+                [ HH.input
+                    [ HP.type_ InputCheckbox
+                    , HP.checked st.draw_pointer_crosshair
+                    , HE.onClick \_ -> Just $ Set_param Toggle_draw_pointer_crosshair
                     ]
-                }
-            } case _ of
-                Slider.Slider_updated arr -> do
-                    u <- A.index arr 0
-                    v <- A.index arr 1
-                    pure $ Set_param $ Set_advanced_lightness_delta u v
-        , HH.text $ render_range params.lightness_delta_min params.lightness_delta_max
-        ]
+                , HH.text "Draw pointer crosshair"
+                ]
+            , HH.br_
+            , HH.button
+                [ HE.onClick \_ -> Just Save_as_png ]
+                [ HH.text "Save as png" ]
+            , HH.br_
+            , HH.button
+                [ HE.onClick \_ -> Just Reset_canvas ]
+                [ HH.text "Reset canvas" ]
+            ]
+        }
+    , render_control_panel_section
+        { m_on_help_clicked: Nothing
+        , title: "Interaction mode"
+        , children:
+            [ Cut_poly_at_pointer
+            , Cut_largest_poly
+            , Delete_poly_at_pointer
+            , Change_poly_colour_at_pointer
+            ] # map \im -> HH.div
+                [ HP.class_ $ ClassName "interaction_mode_option" ]
+                [ HH.label_
+                    [ HH.input
+                        [ HE.onClick \_ -> Just $ Set_interaction_mode im
+                        , HP.checked $ st.interaction_mode == im
+                        , HP.type_ InputRadio
+                        ]
+                    , HH.text $ print_interaction_mode im
+                    ]
+                , help_btn \e -> Set_dialog_state e $ Just $ DS_interaction_mode_explanation im
+                ]
+        }
+    , render_params st.params
     ]
 
-render_range :: Number -> Number -> String
-render_range u v = fromMaybe "" do
-    u' <- toFixed 5 u
-    v' <- toFixed 5 v
-    pure $ "[" <> u' <> ", " <> v' <> "]"
+render_params :: forall m. MonadAff m => Params -> Html m
+render_params (Params params) = HH.div_
+    [ render_control_panel_section
+        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_n_cuts_per_tick_explanation
+        , title: "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
+        , children:
+            [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
+                { id: "n_cuts_per_tick_slider"
+                , start: [ Int.toNumber params.n_cuts_per_tick ]
+                , range:
+                    [ { k: "min", v: 1.0, step: 1.0 }
+                    , { k: "max", v: 30.0, step: 1.0 }
+                    ]
+                , format:
+                    { to: Int.floor >>> show
+                    , from: Number.fromString >>> fromMaybe 1.0
+                    }
+                } case _ of
+                    Slider.Slider_updated arr -> do
+                        v <- A.index arr 0
+                        pure $ Set_param $ Set_n_cuts_per_tick $ Int.floor v
+            ]
+        }
+    , render_control_panel_section
+        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just $ DS_cut_ratio_explanation Simple
+        , title: "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
+        , children:
+            [ HH.slot _slider "cut_ratio_slider" Slider.component
+                { id: "cut_ratio_slider"
+                , start: [ params.cut_ratio ]
+                , range:
+                    [ { k: "min", v: 0.0, step: 0.01 }
+                    , { k: "max", v: 0.5, step: 0.01 }
+                    ]
+                , format: format_as_percentage $ const 0
+                } case _ of
+                    Slider.Slider_updated arr -> do
+                        n <- A.index arr 0
+                        pure $ Set_param $ Set_cut_ratio n
+            ]
+        }
+    , render_control_panel_section
+        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_hue_delta_explanation
+        , title: "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
+        , children:
+            [ HH.slot _slider "hue_delta_slider" Slider.component
+                { id: "hue_delta_slider"
+                , start: [ params.hue_delta.min, params.hue_delta.max ]
+                , range:
+                    [ { k: "min", v: -0.5, step: 0.001 }
+                    , { k: "25%", v: -0.001, step: 0.00001 }
+                    , { k: "50%", v: 0.0, step: 0.00001 }
+                    , { k: "75%", v: 0.001, step: 0.001 }
+                    , { k: "max", v: 0.5, step: 0.001 }
+                    ]
+                , format: format_as_percentage n_decimal_places_for_hue_and_lightness
+                } case _ of
+                    Slider.Slider_updated arr -> do
+                        u <- A.index arr 0
+                        v <- A.index arr 1
+                        pure $ Set_param $ Set_hue_delta { min: u, max: v }
+            ]
+        }
+    , render_control_panel_section
+        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_lightness_delta_explanation
+        , title: "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
+        , children:
+            [ HH.slot _slider "lightness_delta_slider" Slider.component
+                { id: "lightness_delta_slider"
+                , start: [ params.lightness_delta.min, params.lightness_delta.max ]
+                , range:
+                    [ { k: "min", v: -0.5, step: 0.001 }
+                    , { k: "25%", v: -0.001, step: 0.00001 }
+                    , { k: "50%", v: 0.0, step: 0.00001 }
+                    , { k: "75%", v: 0.001, step: 0.001 }
+                    , { k: "max", v: 0.5, step: 0.001 }
+                    ]
+                , format: format_as_percentage n_decimal_places_for_hue_and_lightness
+                } case _ of
+                    Slider.Slider_updated arr -> do
+                        u <- A.index arr 0
+                        v <- A.index arr 1
+                        pure $ Set_param $ Set_lightness_delta { min: u, max: v }
+            ]
+        }
+    ]
 
-render_control_panel_section :: forall m. String -> Array (Html m) -> Html m
-render_control_panel_section title children = HH.div
+n_decimal_places_for_hue_and_lightness :: Number -> Int
+n_decimal_places_for_hue_and_lightness n =
+    let absn = abs n
+    in if absn == 0.0 then 0
+    else if absn < 0.1 then 3
+    else if absn < 50.0 then 1
+    else 0
+
+render_range :: (Number -> Int) -> Number_range -> String
+render_range n_decimal_places r =
+    let format = format_as_percentage n_decimal_places
+        u = format.to r.min
+        v = format.to r.max
+    in "(" <> u <> ", " <> v <> ")"
+
+render_control_panel_section :: forall m.
+    { m_on_help_clicked :: Maybe (MouseEvent -> Action)
+    , title :: String
+    , children :: Array (Html m)
+    } -> Html m
+render_control_panel_section { m_on_help_clicked, title, children } = HH.div
     [ HP.classes [ ClassName "control_panel_section" ] ]
     [ HH.div [ HP.classes [ ClassName "width100" ] ]
-        [ HH.h4 [] [ HH.text title ]
+        [ HH.h4
+            [ HP.class_ $ ClassName "control_panel_section_header" ] $
+            [ HH.text title ]
+            <> case m_on_help_clicked of
+                Nothing -> []
+                Just on_help_clicked -> [ help_btn on_help_clicked ]
         , HH.div [ HP.classes [ ClassName "width100" ] ] children
         ]
     ]
 
+help_btn :: forall m. (MouseEvent -> Action) -> Html m
+help_btn on_click = HH.i
+    [ HP.classes $ map ClassName [ "fas", "fa-question-circle", "control_panel_help_btn" ]
+    , HP.tabIndex 0
+    , HE.onClick \e -> Just $ on_click e
+    ]
+    []
+
 button_bar :: forall m. Array (Html m) -> Html m
 button_bar btns = HH.span [ HP.classes [ ClassName "btn_bar" ] ] btns
+
+render_dialog :: forall m. State -> Html m
+render_dialog st = case st.m_dialog_state of
+    Nothing -> HH.div_ []
+    Just ds -> render_dialog_ st ds
+
+render_dialog_ :: forall m. State -> Dialog_state -> Html m
+render_dialog_ st ds =
+    let cut_param_paragraphs =
+            [ HH.p_
+                [ HH.text "The "
+                , HH.b_ [ HH.text "Cut ratio" ]
+                , HH.text " parameter controls how even the pieces are in terms of area."
+                ]
+            , HH.p_
+                [ HH.text "The "
+                , HH.b_ [ HH.text "Colour change" ]
+                , HH.text " parameter controls how the colour of the smaller polygons change relative to the colour of the original polygon."
+                ]
+            , HH.p_
+                [ HH.text "The "
+                , HH.b_ [ HH.text "Lightness change" ]
+                , HH.text " parameter controls how the lightness of the smaller polygons change relative to the lightness of the original polygon."
+                ]
+            ]
+    in HH.div
+    [ HP.id_ "dialog_wrapper"
+    , HE.onClick \e -> Just $ Set_dialog_state e Nothing
+    ]
+    [ HH.div
+        [ HP.id_ "dialog" ]
+        [ HH.h3
+            [ HP.id_ "dialog_header" ]
+            [ HH.text case ds of
+                DS_interaction_mode_explanation im -> print_interaction_mode im
+                DS_n_cuts_per_tick_explanation -> "# cuts per tick"
+                DS_cut_ratio_explanation _ -> "Cut ratio"
+                DS_hue_delta_explanation -> "Colour change"
+                DS_lightness_delta_explanation -> "Lightness delta"
+            , HH.i
+                [ HP.classes $ map ClassName [ "fas", "fa-times", "close-btn" ]
+                , HP.tabIndex 0
+                , HE.onClick \e -> Just $ Set_dialog_state e Nothing
+                ]
+                []
+            ]
+        , HH.div [ HP.id_ "dialog_contents" ] case ds of
+            DS_interaction_mode_explanation Cut_poly_at_pointer ->
+                [ HH.p_ [ HH.text "Clicking/touching a polygon will cut it into two smaller polygons." ] ] <> cut_param_paragraphs
+
+            DS_interaction_mode_explanation Cut_largest_poly ->
+                [ HH.p_ [ HH.text "Clicking/touching anywhere on the canvas will cut the largest polygon into two smaller polygons." ]
+                ] <> cut_param_paragraphs
+
+            DS_interaction_mode_explanation Delete_poly_at_pointer ->
+                [ HH.text "Clicking/touching a polygon will delete it." ]
+
+            DS_interaction_mode_explanation Change_poly_colour_at_pointer ->
+                [ HH.text "The polygon being clicked/touched will change colour and lightness based on the "
+                , HH.b_ [ HH.text "Colour change" ]
+                , HH.text " parameter and the "
+                , HH.b_ [ HH.text "Lightness change" ]
+                , HH.text " parameter."
+                ]
+
+            DS_n_cuts_per_tick_explanation ->
+                [ HH.p_ [ HH.text "The number of times a new polygon is selected and cut each tick (there are roughly 60 ticks every second)." ]
+                , HH.p_ [ HH.b_ [ HH.text "TLDR:" ], HH.text " speed (the higher the number, the faster the cuts get made)." ]
+                ]
+
+            DS_cut_ratio_explanation Simple ->
+                [ HH.p_ [ HH.text "How even the cut is." ]
+                , HH.p_ [ HH.text "Closer to 0% will make the cut less even, and closer to 50% will make the cut more even." ]
+                , HH.p_ [ HH.button [ HE.onClick \e -> Just $ Set_dialog_state e $ Just $ DS_cut_ratio_explanation Nerdy ] [ HH.text "Click for nerdy explanation" ] ]
+                ]
+
+            DS_cut_ratio_explanation Nerdy ->
+                [ HH.p_
+                    [ HH.text "1. A point "
+                    , HH.b_ [ HH.text "P" ]
+                    , HH.text " is chosen at random along the circumference of the polygon."
+                    ]
+                , HH.p_
+                    [ HH.text "2. A second point "
+                    , HH.b_ [ HH.text "Q" ]
+                    , HH.text " is calculated by moving "
+                    , HH.b_ [ HH.text "Cut ratio %" ]
+                    , HH.text " along the circumference of the polygon from "
+                    , HH.b_ [ HH.text "P" ]
+                    , HH.text "."
+                    ]
+                , HH.p_
+                    [ HH.text "3. The polygon is cut along the line "
+                    , HH.b_ [ HH.text "PQ" ]
+                    , HH.text "."
+                    ]
+                ]
+
+            DS_hue_delta_explanation ->
+                [
+                ]
+
+            DS_lightness_delta_explanation -> []
+        ]
+    ]
+
+print_interaction_mode :: Interaction_mode -> String
+print_interaction_mode = case _ of
+    Cut_poly_at_pointer -> "Cut poly at pointer"
+    Cut_largest_poly -> "Cut largest poly"
+    Delete_poly_at_pointer -> "Delete poly at pointer"
+    Change_poly_colour_at_pointer -> "Change colour of poly at pointer"
 
 -------------------------------------------------------------------------------
 -- Action ---------------------------------------------------------------------
@@ -388,20 +476,16 @@ data Action
     | Handle_pointer_down Int Int
     | Handle_pointer_up
     | Set_interaction_mode Interaction_mode
-    | Set_param_mode Param_mode
     | Set_param Set_param_action
     | Save_as_png
     | Reset_canvas
+    | Set_dialog_state MouseEvent (Maybe Dialog_state)
 
 data Set_param_action
-    = Set_simple_cut_speed SimpleCutSpeedParam
-    | Set_simple_cut_angle SimpleCutAngleParam
-    | Set_simple_colour_change SimpleColourChangeParam
-    | Set_simple_lightness_change SimpleLightnessChangeParam
-    | Set_advanced_n_cuts_per_tick Int
-    | Set_advanced_cut_ratio Number
-    | Set_advanced_hue_delta Number Number
-    | Set_advanced_lightness_delta Number Number
+    = Set_n_cuts_per_tick Int
+    | Set_cut_ratio Number
+    | Set_hue_delta Number_range
+    | Set_lightness_delta Number_range
     | Toggle_draw_debug_lines
     | Toggle_draw_pointer_crosshair
 
@@ -455,6 +539,7 @@ handle_action = case _ of
             Cut_poly_at_pointer -> liftEffect set_action_cut_poly_at_pointer
             Cut_largest_poly -> liftEffect set_action_cut_largest_poly
             Delete_poly_at_pointer -> liftEffect set_action_delete_poly_at_pointer
+            Change_poly_colour_at_pointer -> liftEffect set_action_change_poly_colour_at_pointer
         H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
 
     Handle_pointer_up -> do
@@ -462,11 +547,6 @@ handle_action = case _ of
         H.modify_ _ { pointer_is_down = false }
 
     Set_interaction_mode m -> H.modify_ $ Lens.set _interaction_mode m
-
-    Set_param_mode m -> do
-        H.modify_ $ Lens.set _param_mode m
-        st <- H.get
-        liftEffect $ set_params st
 
     Set_param a -> do
         handle_set_param_action a
@@ -477,55 +557,18 @@ handle_action = case _ of
 
     Reset_canvas -> liftEffect reset_canvas
 
+    Set_dialog_state e m -> do
+        liftEffect $ stopPropagation $ ME.toEvent e
+        H.modify_ $ Lens.set (prop (SProxy :: SProxy "m_dialog_state")) m
+
 handle_set_param_action :: forall m. MonadEffect m => Set_param_action -> M m Unit
 handle_set_param_action = case _ of
-    Set_simple_cut_speed x -> H.modify_ $ Lens.set _simple_cut_speed x
-    Set_simple_cut_angle x -> H.modify_ $ Lens.set _simple_cut_angle x
-    Set_simple_colour_change x -> H.modify_ $ Lens.set _simple_colour_change x
-    Set_simple_lightness_change x -> H.modify_ $ Lens.set _simple_lightness_change x
-    Set_advanced_n_cuts_per_tick n -> H.modify_ $ Lens.set _advanced_n_cuts_per_tick n
-    Set_advanced_cut_ratio n -> H.modify_ $ Lens.set _advanced_cut_ratio n
-    Set_advanced_hue_delta u v -> H.modify_ $ (Lens.set _advanced_hue_delta_min u) >>> (Lens.set _advanced_hue_delta_max v)
-    Set_advanced_lightness_delta u v -> H.modify_ $ (Lens.set _advanced_lightness_delta_min u) >>> (Lens.set _advanced_lightness_delta_max v)
+    Set_n_cuts_per_tick n -> H.modify_ $ Lens.set _n_cuts_per_tick n
+    Set_cut_ratio n -> H.modify_ $ Lens.set _cut_ratio n
+    Set_hue_delta r -> H.modify_ $ Lens.set _hue_delta r
+    Set_lightness_delta r -> H.modify_ $ Lens.set _lightness_delta r
     Toggle_draw_debug_lines -> H.modify_ $ Lens.over _draw_debug_lines not
     Toggle_draw_pointer_crosshair -> H.modify_ $ Lens.over _draw_pointer_crosshair not
-
-set_params :: State -> Effect Unit
-set_params st = set_params_impl case st.param_mode of
-    Simple ->
-        let Simple_params ps = st.simple_params
-            hue_delta = case ps.colour_change of
-                Tiny -> 0.005
-                Moderate -> 0.03
-                Pretty_much_random -> 0.5
-            { min: lightness_delta_min, max: lightness_delta_max } = case ps.cut_angle, ps.lightness_change of
-                Very_uneven, Get_darker -> { min: -0.003, max: 0.0 }
-                Very_uneven, Get_lighter -> { min: 0.0, max: 0.003 }
-                A_bit_uneven, Get_darker -> { min: -0.01, max: 0.0 }
-                A_bit_uneven, Get_lighter -> { min: 0.0, max: 0.01 }
-                Even, Get_darker -> { min: -0.03, max: 0.0 }
-                Even, Get_lighter -> { min: 0.0, max: 0.03 }
-                _, Stay_same -> { min: 0.0, max: 0.0 }
-        in
-        { n_cuts_per_tick: case ps.cut_speed of
-            Slow -> 1
-            Med -> 5
-            Fast -> 20
-        , cut_ratio: case ps.cut_angle of
-            Very_uneven -> 0.18
-            A_bit_uneven -> 0.35
-            Even -> 0.5
-        , hue_delta_min: -hue_delta
-        , hue_delta_max: hue_delta
-        , lightness_delta_min: lightness_delta_min
-        , lightness_delta_max: lightness_delta_max
-        , draw_debug_lines: st.draw_debug_lines
-        , draw_pointer_crosshair: st.draw_pointer_crosshair
-        }
-    Advanced -> st.advanced_params
-        # unwrap
-        # Record.insert (SProxy :: SProxy "draw_debug_lines") st.draw_debug_lines
-        # Record.insert (SProxy :: SProxy "draw_pointer_crosshair") st.draw_pointer_crosshair
 
 foreign import get_canvas_container_event_target :: Effect EventTarget
 foreign import update_px_py :: Fn2 Int Int (Effect { px_pct :: Number, py_pct :: Number })
@@ -533,7 +576,8 @@ foreign import set_action_no_op :: Effect Unit
 foreign import set_action_cut_poly_at_pointer :: Effect Unit
 foreign import set_action_cut_largest_poly :: Effect Unit
 foreign import set_action_delete_poly_at_pointer :: Effect Unit
-foreign import set_params_impl :: Raw_params -> Effect Unit
+foreign import set_action_change_poly_colour_at_pointer :: Effect Unit
+foreign import set_params :: State -> Effect Unit
 foreign import init :: Effect Unit
 foreign import reset_canvas :: Effect Unit
 foreign import save_as_png :: Effect Unit
@@ -545,44 +589,20 @@ foreign import save_as_png :: Effect Unit
 _interaction_mode :: Lens' State Interaction_mode
 _interaction_mode = prop (SProxy :: SProxy "interaction_mode")
 
-_param_mode :: Lens' State Param_mode
-_param_mode = prop (SProxy :: SProxy "param_mode")
+_params :: Lens' State Params
+_params = prop (SProxy :: SProxy "params")
 
-_simple_params :: Lens' State Simple_params
-_simple_params = prop (SProxy :: SProxy "simple_params")
+_n_cuts_per_tick :: Lens' State Int
+_n_cuts_per_tick = _params <<< _Newtype <<< prop (SProxy :: SProxy "n_cuts_per_tick")
 
-_simple_cut_speed :: Lens' State SimpleCutSpeedParam
-_simple_cut_speed = _simple_params <<< _Newtype <<< prop (SProxy :: SProxy "cut_speed")
+_cut_ratio :: Lens' State Number
+_cut_ratio = _params <<< _Newtype <<< prop (SProxy :: SProxy "cut_ratio")
 
-_simple_cut_angle :: Lens' State SimpleCutAngleParam
-_simple_cut_angle = _simple_params <<< _Newtype <<< prop (SProxy :: SProxy "cut_angle")
+_hue_delta :: Lens' State Number_range
+_hue_delta = _params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta")
 
-_simple_colour_change :: Lens' State SimpleColourChangeParam
-_simple_colour_change = _simple_params <<< _Newtype <<< prop (SProxy :: SProxy "colour_change")
-
-_simple_lightness_change :: Lens' State SimpleLightnessChangeParam
-_simple_lightness_change = _simple_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_change")
-
-_advanced_params :: Lens' State Advanced_params
-_advanced_params = prop (SProxy :: SProxy "advanced_params")
-
-_advanced_n_cuts_per_tick :: Lens' State Int
-_advanced_n_cuts_per_tick = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "n_cuts_per_tick")
-
-_advanced_cut_ratio :: Lens' State Number
-_advanced_cut_ratio = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "cut_ratio")
-
-_advanced_hue_delta_min :: Lens' State Number
-_advanced_hue_delta_min = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta_min")
-
-_advanced_hue_delta_max :: Lens' State Number
-_advanced_hue_delta_max = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "hue_delta_max")
-
-_advanced_lightness_delta_min :: Lens' State Number
-_advanced_lightness_delta_min = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta_min")
-
-_advanced_lightness_delta_max :: Lens' State Number
-_advanced_lightness_delta_max = _advanced_params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta_max")
+_lightness_delta :: Lens' State Number_range
+_lightness_delta = _params <<< _Newtype <<< prop (SProxy :: SProxy "lightness_delta")
 
 _draw_debug_lines :: Lens' State Boolean
 _draw_debug_lines = prop (SProxy :: SProxy "draw_debug_lines")
@@ -595,11 +615,4 @@ _draw_pointer_crosshair = prop (SProxy :: SProxy "draw_pointer_crosshair")
 -------------------------------------------------------------------------------
 
 derive instance eqInteraction_mode :: Eq Interaction_mode
-
-derive instance newtypeSimple_params :: Newtype Simple_params _
-derive instance newtypeAdvanced_params :: Newtype Advanced_params _
-
-derive instance eqSimpleCutSpeedParam :: Eq SimpleCutSpeedParam
-derive instance eqSimpleCutAngleParam :: Eq SimpleCutAngleParam
-derive instance eqSimpleLightnessChangeParam :: Eq SimpleLightnessChangeParam
-derive instance eqSimpleColourChangeParam :: Eq SimpleColourChangeParam
+derive instance newtypeParams :: Newtype Params _

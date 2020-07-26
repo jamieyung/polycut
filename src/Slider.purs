@@ -6,14 +6,18 @@ module Slider
     , State
     , Slot
     , component
+    , format_as_percentage
     ) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Number as Number
+import Data.String as String
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (liftEffect)
+import Global (toFixed)
 import Halogen (Component, ComponentHTML, HalogenM, defaultEval, get, mkComponent, mkEval, raise, subscribe) as H
 import Halogen.Data.Slot (Slot) as H
 import Halogen.HTML as HH
@@ -44,10 +48,10 @@ type Input = State
 type State =
     { id :: String
     , start :: Array Number
-    , range ::
-        { min :: Number
-        , max :: Number
-        , non_linear :: Array { k :: String, v :: Number, step :: Number }
+    , range :: Array { k :: String, v :: Number, step :: Number }
+    , format ::
+        { to :: Number -> String
+        , from :: String -> Number
         }
     }
 
@@ -64,6 +68,17 @@ component = H.mkComponent
         , handleAction = handle_action
         , handleQuery = handle_query
         }
+    }
+
+format_as_percentage :: (Number -> Int) -> { from :: String -> Number, to :: Number -> String }
+format_as_percentage n_decimal_places =
+    { to: \n ->
+        let pct = n * 100.0
+        in (fromMaybe "0" $ toFixed (n_decimal_places pct) pct) <> "%"
+    , from: \s -> fromMaybe 0.5 do
+        let s' = String.take (String.length s - 1) s
+        n <- Number.fromString s'
+        pure $ n / 100.0
     }
 
 --------------------------------------------------------------------------------

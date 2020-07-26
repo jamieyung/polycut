@@ -3,25 +3,31 @@ exports.init_no_ui_slider = function (st) {
     var el = document.getElementById(st.id)
 
     var range = {}
-    range.min = st.range.min
-    for (x of st.range.non_linear) {
+    for (x of st.range) {
       range[x.k] = [x.v, x.step]
     }
-    range.max = st.range.max
 
     var slider = noUiSlider.create(el, {
       range: range,
       behaviour: "drag",
-      start: st.start,
+      start: st.start.map(st.format.to),
       connect: true,
+      pips: {
+        mode: "range",
+        density: 3,
+        format: {
+          to: st.format.to,
+          from: st.format.from
+        }
+      },
       format: {
-        to: function (v) { return v },
-        from: function (v) { return Number(v) }
+        to: st.format.to,
+        from: st.format.from
       }
     })
 
     slider.on("update", function (values) {
-      el.dispatchEvent(new CustomEvent("slider_update", { detail: values }))
+      el.dispatchEvent(new CustomEvent("slider_update", { detail: values.map(st.format.from) }))
     })
 
     return el

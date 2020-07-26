@@ -8,6 +8,7 @@ const ACTION_NO_OP = 0
 const ACTION_CUT_POLY_AT_POINTER = 1
 const ACTION_CUT_LARGEST_POLY = 2
 const ACTION_DELETE_POLY_AT_POINTER = 3
+const ACTION_CHANGE_POLY_COLOUR_AT_POINTER = 4
 
 const FLASH_LINE_INITIAL_TICKS_LEFT = 30
 
@@ -65,9 +66,15 @@ exports.set_action_delete_poly_at_pointer = function () {
   action = ACTION_DELETE_POLY_AT_POINTER
 }
 
-exports.set_params_impl = function (s) {
+exports.set_action_change_poly_colour_at_pointer = function () {
+  action = ACTION_CHANGE_POLY_COLOUR_AT_POINTER
+}
+
+exports.set_params = function (state) {
   return function () {
-    params = s
+    params = state.params
+    params.draw_debug_lines = state.draw_debug_lines
+    params.draw_pointer_crosshair = state.draw_pointer_crosshair
   }
 }
 
@@ -115,16 +122,17 @@ function resize() {
   const h = window.innerHeight
   const window_ratio = w/h
 
+  const root = document.getElementById("root")
   if (window_ratio < 0.8) { // very tall
-    document.body.style["flex-direction"] = "column"
+    root.style["flex-direction"] = "column"
     canvas_container_el.style["width"] = "100%"
     canvas_container_el.style["height"] = w + "px"
   } else if (window_ratio > 1.5) { // very wide
-    document.body.style["flex-direction"] = "row"
+    root.style["flex-direction"] = "row"
     canvas_container_el.style["height"] = "100%"
     canvas_container_el.style["width"] = h + "px"
   } else { // roughly square
-    document.body.style["flex-direction"] = "row"
+    root.style["flex-direction"] = "row"
     canvas_container_el.style["height"] = "100%"
     canvas_container_el.style["width"] = (w*0.65) + "px"
   }
@@ -145,13 +153,14 @@ function reset_canvas() {
   flash_lines = []
 
   for (const poly of polygons) {
-    polygons_container.removeChild(poly.poly)
+    polygons_container.removeChild(poly.graphics)
   }
+  const first_poly = mk_poly([p00, p10, p11, p01])
   const h = Math.random()
   const s = Math.random()
   const l = lerp(0.1, 0.6, Math.random())
-  const first_poly = mk_poly([p00, p10, p11, p01], h, s, l)
-  polygons_container.addChild(first_poly.poly)
+  set_poly_colour(first_poly, h, s, l)
+  polygons_container.addChild(first_poly.graphics)
   polygons = [first_poly]
 
   history = []
@@ -227,8 +236,14 @@ function tick() {
       const idx = get_poly_at_pointer()
       if (idx !== -1) {
         var poly = polygons[idx]
-        polygons_container.removeChild(poly.poly)
+        polygons_container.removeChild(poly.graphics)
         polygons.splice(idx, 1)
+      }
+  } else if (action == ACTION_CHANGE_POLY_COLOUR_AT_POINTER) {
+      const idx = get_poly_at_pointer()
+      if (idx !== -1) {
+        var poly = polygons[idx]
+        set_child_colour_based_on_parent_colour(poly, poly)
       }
   }
 }
@@ -336,20 +351,14 @@ function cut_poly(poly_idx) {
     i++
   }
 
-  const h1 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
-  const h2 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
-
-  const s = 1
-
-  const l1 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
-  const l2 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
-
-  const p1 = mk_poly(p1_verts, h1, s, l1)
-  const p2 = mk_poly(p2_verts, h2, s, l2)
+  const p1 = mk_poly(p1_verts)
+  const p2 = mk_poly(p2_verts)
+  set_child_colour_based_on_parent_colour(poly, p1)
+  set_child_colour_based_on_parent_colour(poly, p2)
   polygons.splice(poly_idx, 1)
-  polygons_container.removeChild(poly.poly)
-  polygons_container.addChild(p1.poly)
-  polygons_container.addChild(p2.poly)
+  polygons_container.removeChild(poly.graphics)
+  polygons_container.addChild(p1.graphics)
+  polygons_container.addChild(p2.graphics)
   const p1_idx = insert_poly(p1)
   const p2_idx = insert_poly(p2)
 
@@ -423,19 +432,32 @@ function mk_line(u, v) {
   }
 }
 
-function mk_poly(verts, h, s, l) {
-  const poly = new PIXI.Graphics()
-  const hex = hsl_to_hex(h, s, l)
-  poly.beginFill(hex).lineStyle(0).drawPolygon(verts).endFill()
+function set_child_colour_based_on_parent_colour(parent_poly, child_poly) {
+  const h = (parent_poly.h + lerp(params.hue_delta.min, params.hue_delta.max, Math.random()) + 1)%1
+  const s = 1
+  const l = clamp(0, 1, parent_poly.l + lerp(params.lightness_delta.min, params.lightness_delta.max, Math.random()))
+  set_poly_colour(child_poly, h, s, l)
+}
+
+function set_poly_colour(poly, h, s, l) {
+  poly.h = h
+  poly.s = s
+  poly.l = l
+  poly.hex = hsl_to_hex(h, s, l)
+  poly.graphics.clear()
+  poly.graphics.beginFill(poly.hex).lineStyle(0).drawPolygon(poly.verts).endFill()
+}
+
+function mk_poly(verts) {
   const ret = {
     circumference: 0,
     verts: verts,
     line_length_to_idx: [],
-    h: h,
-    s: s,
-    l: l,
-    hex: hex,
-    poly: poly
+    h: 0,
+    s: 0,
+    l: 0,
+    hex: 0,
+    graphics: new PIXI.Graphics()
   }
 
   const n = verts.length
