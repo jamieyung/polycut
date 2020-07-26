@@ -220,95 +220,112 @@ render_control_panel st = HH.div
                 , help_btn \e -> Set_dialog_state e $ Just $ DS_interaction_mode_explanation im
                 ]
         }
-    , render_params st.params
+    , render_params st
     ]
 
-render_params :: forall m. MonadAff m => Params -> Html m
-render_params (Params params) = HH.div_
-    [ render_control_panel_section
-        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_n_cuts_per_tick_explanation
-        , title: "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
-        , children:
-            [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
-                { id: "n_cuts_per_tick_slider"
-                , start: [ Int.toNumber params.n_cuts_per_tick ]
-                , range:
-                    [ { k: "min", v: 1.0, step: 1.0 }
-                    , { k: "max", v: 30.0, step: 1.0 }
-                    ]
-                , format:
-                    { to: Int.floor >>> show
-                    , from: Number.fromString >>> fromMaybe 1.0
-                    }
-                } case _ of
-                    Slider.Slider_updated arr -> do
-                        v <- A.index arr 0
-                        pure $ Set_param $ Set_n_cuts_per_tick $ Int.floor v
-            ]
-        }
-    , render_control_panel_section
-        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just $ DS_cut_ratio_explanation Simple
-        , title: "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
-        , children:
-            [ HH.slot _slider "cut_ratio_slider" Slider.component
-                { id: "cut_ratio_slider"
-                , start: [ params.cut_ratio ]
-                , range:
-                    [ { k: "min", v: 0.0, step: 0.01 }
-                    , { k: "max", v: 0.5, step: 0.01 }
-                    ]
-                , format: format_as_percentage $ const 0
-                } case _ of
-                    Slider.Slider_updated arr -> do
-                        n <- A.index arr 0
-                        pure $ Set_param $ Set_cut_ratio n
-            ]
-        }
-    , render_control_panel_section
-        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_hue_delta_explanation
-        , title: "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
-        , children:
-            [ HH.slot _slider "hue_delta_slider" Slider.component
-                { id: "hue_delta_slider"
-                , start: [ params.hue_delta.min, params.hue_delta.max ]
-                , range:
-                    [ { k: "min", v: -0.5, step: 0.001 }
-                    , { k: "25%", v: -0.001, step: 0.00001 }
-                    , { k: "50%", v: 0.0, step: 0.00001 }
-                    , { k: "75%", v: 0.001, step: 0.001 }
-                    , { k: "max", v: 0.5, step: 0.001 }
-                    ]
-                , format: format_as_percentage n_decimal_places_for_hue_and_lightness
-                } case _ of
-                    Slider.Slider_updated arr -> do
-                        u <- A.index arr 0
-                        v <- A.index arr 1
-                        pure $ Set_param $ Set_hue_delta { min: u, max: v }
-            ]
-        }
-    , render_control_panel_section
-        { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_lightness_delta_explanation
-        , title: "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
-        , children:
-            [ HH.slot _slider "lightness_delta_slider" Slider.component
-                { id: "lightness_delta_slider"
-                , start: [ params.lightness_delta.min, params.lightness_delta.max ]
-                , range:
-                    [ { k: "min", v: -0.5, step: 0.001 }
-                    , { k: "25%", v: -0.001, step: 0.00001 }
-                    , { k: "50%", v: 0.0, step: 0.00001 }
-                    , { k: "75%", v: 0.001, step: 0.001 }
-                    , { k: "max", v: 0.5, step: 0.001 }
-                    ]
-                , format: format_as_percentage n_decimal_places_for_hue_and_lightness
-                } case _ of
-                    Slider.Slider_updated arr -> do
-                        u <- A.index arr 0
-                        v <- A.index arr 1
-                        pure $ Set_param $ Set_lightness_delta { min: u, max: v }
-            ]
-        }
-    ]
+render_params :: forall m. MonadAff m => State -> Html m
+render_params st@{ params: Params params } =
+    let hide_cut_params = case st.interaction_mode of
+            Cut_poly_at_pointer -> false
+            Cut_largest_poly -> false
+            Delete_poly_at_pointer -> true
+            Change_poly_colour_at_pointer -> true
+        hide_col_and_lightness_params = case st.interaction_mode of
+            Cut_poly_at_pointer -> false
+            Cut_largest_poly -> false
+            Delete_poly_at_pointer -> true
+            Change_poly_colour_at_pointer -> false
+    in HH.div_ $
+    (if hide_cut_params then [] else
+        [ render_control_panel_section
+            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_n_cuts_per_tick_explanation
+            , title: "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
+            , children:
+                [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
+                    { id: "n_cuts_per_tick_slider"
+                    , start: [ Int.toNumber params.n_cuts_per_tick ]
+                    , range:
+                        [ { k: "min", v: 1.0, step: 1.0 }
+                        , { k: "max", v: 30.0, step: 1.0 }
+                        ]
+                    , format:
+                        { to: Int.floor >>> show
+                        , from: Number.fromString >>> fromMaybe 1.0
+                        }
+                    } case _ of
+                        Slider.Slider_updated arr -> do
+                            v <- A.index arr 0
+                            pure $ Set_param $ Set_n_cuts_per_tick $ Int.floor v
+                ]
+            }
+        , render_control_panel_section
+            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just $ DS_cut_ratio_explanation Simple
+            , title: "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
+            , children:
+                [ HH.slot _slider "cut_ratio_slider" Slider.component
+                    { id: "cut_ratio_slider"
+                    , start: [ params.cut_ratio ]
+                    , range:
+                        [ { k: "min", v: 0.0, step: 0.01 }
+                        , { k: "max", v: 0.5, step: 0.01 }
+                        ]
+                    , format: format_as_percentage $ const 0
+                    } case _ of
+                        Slider.Slider_updated arr -> do
+                            n <- A.index arr 0
+                            pure $ Set_param $ Set_cut_ratio n
+                ]
+            }
+        ]
+    )
+    <>
+    (if hide_col_and_lightness_params then [] else
+        [ render_control_panel_section
+            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_hue_delta_explanation
+            , title: "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
+            , children:
+                [ HH.slot _slider "hue_delta_slider" Slider.component
+                    { id: "hue_delta_slider"
+                    , start: [ params.hue_delta.min, params.hue_delta.max ]
+                    , range:
+                        [ { k: "min", v: -0.5, step: 0.001 }
+                        , { k: "25%", v: -0.001, step: 0.00001 }
+                        , { k: "50%", v: 0.0, step: 0.00001 }
+                        , { k: "75%", v: 0.001, step: 0.001 }
+                        , { k: "max", v: 0.5, step: 0.001 }
+                        ]
+                    , format: format_as_percentage n_decimal_places_for_hue_and_lightness
+                    } case _ of
+                        Slider.Slider_updated arr -> do
+                            u <- A.index arr 0
+                            v <- A.index arr 1
+                            pure $ Set_param $ Set_hue_delta { min: u, max: v }
+                ]
+            }
+        , render_control_panel_section
+            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_lightness_delta_explanation
+            , title: "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
+            , children:
+                [ HH.slot _slider "lightness_delta_slider" Slider.component
+                    { id: "lightness_delta_slider"
+                    , start: [ params.lightness_delta.min, params.lightness_delta.max ]
+                    , range:
+                        [ { k: "min", v: -0.5, step: 0.001 }
+                        , { k: "25%", v: -0.001, step: 0.00001 }
+                        , { k: "50%", v: 0.0, step: 0.00001 }
+                        , { k: "75%", v: 0.001, step: 0.001 }
+                        , { k: "max", v: 0.5, step: 0.001 }
+                        ]
+                    , format: format_as_percentage n_decimal_places_for_hue_and_lightness
+                    } case _ of
+                        Slider.Slider_updated arr -> do
+                            u <- A.index arr 0
+                            v <- A.index arr 1
+                            pure $ Set_param $ Set_lightness_delta { min: u, max: v }
+                ]
+            }
+        ]
+    )
 
 n_decimal_places_for_hue_and_lightness :: Number -> Int
 n_decimal_places_for_hue_and_lightness n =
@@ -499,7 +516,8 @@ handle_action :: forall m.
 handle_action = case _ of
     Initialize -> do
         st <- H.get
-        liftEffect set_action_no_op
+        liftEffect $ set_pointer_is_down false
+        liftEffect set_action_cut_poly_at_pointer
         liftEffect $ set_params st
         liftEffect init
 
@@ -535,18 +553,20 @@ handle_action = case _ of
     Handle_pointer_down x y -> do
         { px_pct, py_pct } <- liftEffect $ runFn2 update_px_py x y
         st <- H.get
+        liftEffect $ set_pointer_is_down true
+        H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
+
+    Handle_pointer_up -> do
+        liftEffect $ set_pointer_is_down false
+        H.modify_ _ { pointer_is_down = false }
+
+    Set_interaction_mode m -> do
+        st <- H.modify $ Lens.set _interaction_mode m
         case st.interaction_mode of
             Cut_poly_at_pointer -> liftEffect set_action_cut_poly_at_pointer
             Cut_largest_poly -> liftEffect set_action_cut_largest_poly
             Delete_poly_at_pointer -> liftEffect set_action_delete_poly_at_pointer
             Change_poly_colour_at_pointer -> liftEffect set_action_change_poly_colour_at_pointer
-        H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
-
-    Handle_pointer_up -> do
-        liftEffect set_action_no_op
-        H.modify_ _ { pointer_is_down = false }
-
-    Set_interaction_mode m -> H.modify_ $ Lens.set _interaction_mode m
 
     Set_param a -> do
         handle_set_param_action a
@@ -572,7 +592,7 @@ handle_set_param_action = case _ of
 
 foreign import get_canvas_container_event_target :: Effect EventTarget
 foreign import update_px_py :: Fn2 Int Int (Effect { px_pct :: Number, py_pct :: Number })
-foreign import set_action_no_op :: Effect Unit
+foreign import set_pointer_is_down :: Boolean -> Effect Unit
 foreign import set_action_cut_poly_at_pointer :: Effect Unit
 foreign import set_action_cut_largest_poly :: Effect Unit
 foreign import set_action_delete_poly_at_pointer :: Effect Unit

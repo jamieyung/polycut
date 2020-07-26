@@ -4,7 +4,6 @@ const trace = console.log
 
 const DIM = 800
 
-const ACTION_NO_OP = 0
 const ACTION_CUT_POLY_AT_POINTER = 1
 const ACTION_CUT_LARGEST_POLY = 2
 const ACTION_DELETE_POLY_AT_POINTER = 3
@@ -19,8 +18,9 @@ let app
 let polygons_container
 let flash_lines_graphics
 let debug_lines_graphics
-let debug_pointer_crosshair_graphics
+let pointer_crosshair_graphics
 let canvas_container_el
+let pointer_is_down
 let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let last_executed_command_idx // if > -1, means at state just after performing history[last_executed_command_idx]
@@ -50,8 +50,10 @@ exports.update_px_py = function (px, py) {
   }
 }
 
-exports.set_action_no_op = function () {
-  action = ACTION_NO_OP
+exports.set_pointer_is_down = function (b) {
+  return function () {
+    pointer_is_down = b
+  }
 }
 
 exports.set_action_cut_poly_at_pointer = function () {
@@ -96,8 +98,8 @@ exports.init = function () {
   app.stage.addChild(flash_lines_graphics)
   debug_lines_graphics = new PIXI.Graphics()
   app.stage.addChild(debug_lines_graphics)
-  debug_pointer_crosshair_graphics = new PIXI.Graphics()
-  app.stage.addChild(debug_pointer_crosshair_graphics)
+  pointer_crosshair_graphics = new PIXI.Graphics()
+  app.stage.addChild(pointer_crosshair_graphics)
 
   canvas_container_el = document.getElementById("canvas_container")
   canvas_container_el.appendChild(app.view)
@@ -214,16 +216,21 @@ function tick() {
     }
   }
 
-  debug_pointer_crosshair_graphics.clear()
+  pointer_crosshair_graphics.clear()
   if (params.draw_pointer_crosshair) {
-    debug_pointer_crosshair_graphics.lineStyle(1, 0xff00ff)
-    debug_pointer_crosshair_graphics.moveTo(DIM*px_pct, 0)
-    debug_pointer_crosshair_graphics.lineTo(DIM*px_pct, DIM)
-    debug_pointer_crosshair_graphics.moveTo(0, DIM*py_pct)
-    debug_pointer_crosshair_graphics.lineTo(DIM, DIM*py_pct)
+    if (action === ACTION_CUT_POLY_AT_POINTER || action === ACTION_DELETE_POLY_AT_POINTER || action === ACTION_CHANGE_POLY_COLOUR_AT_POINTER) {
+      pointer_crosshair_graphics.lineStyle(2, 0xff00ff)
+      pointer_crosshair_graphics.moveTo(DIM*px_pct, 0)
+      pointer_crosshair_graphics.lineTo(DIM*px_pct, DIM)
+      pointer_crosshair_graphics.moveTo(0, DIM*py_pct)
+      pointer_crosshair_graphics.lineTo(DIM, DIM*py_pct)
+    }
   }
 
-  // handle action
+  if (pointer_is_down) handle_pointer_is_down()
+}
+
+function handle_pointer_is_down() {
   if (action === ACTION_CUT_POLY_AT_POINTER) {
     const n = params.n_cuts_per_tick
     for (let i = 0; i < n; i++) {
