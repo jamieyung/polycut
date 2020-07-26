@@ -16,6 +16,7 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype)
 import Data.Number as Number
 import Data.Symbol (SProxy(..))
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect, liftEffect)
@@ -51,8 +52,7 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- DONE fix png download on safari
 -- DONE fix debug lines for small areas
 -- DONE delete poly
-
--- TODO add splash screen for first load
+-- DONE add splash screen for first load
 
 -- TODO save presets
 -- TODO undo/redo
@@ -94,8 +94,8 @@ component = H.mkComponent
         { params: Params
             { n_cuts_per_tick: 3
             , cut_ratio: 0.12
-            , hue_delta: { min: 0.0, max: 0.01 }
-            , lightness_delta: { min: 0.0, max: 0.002 }
+            , hue_delta: { min: -0.0002, max: 0.001 }
+            , lightness_delta: { min: -0.0002, max: 0.0013 }
             }
         , interaction_mode: Cut_poly_at_pointer
         , px_pct: 0.0
@@ -158,14 +158,25 @@ data Dialog_state
 
 data Explanation_depth = Simple | Nerdy
 
+type Preset =
+    { params :: Params
+    , interaction_mode :: Interaction_mode
+    }
+
 -------------------------------------------------------------------------------
 -- Slots ----------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
 type Child_slots =
-    ( slider :: Slider.Slot String -- id
+    ( slider :: Slider.Slot Slider_id
     , hue_delta_explanation :: HueDeltaExplanation.Slot Unit
     )
+
+data Slider_id
+    = SI_n_cuts_per_tick
+    | SI_cut_ratio
+    | SI_hue_delta
+    | SI_lightness_delta
 
 _slider = SProxy :: SProxy "slider"
 _hue_delta_explanation = SProxy :: SProxy "hue_delta_explanation"
@@ -184,10 +195,10 @@ render st = HH.div
 
 render_control_panel :: forall m. MonadAff m => State -> Html m
 render_control_panel st = HH.div
-    [ HP.id_ "control_panel" ]
+    [ HP.id_ "control_panel" ] $
     [ render_control_panel_section
         { m_on_help_clicked: Nothing
-        , title: "Misc. options"
+        , m_title: Just "Misc. options"
         , children:
             [ HH.label_
                 [ HH.input
@@ -218,7 +229,7 @@ render_control_panel st = HH.div
         }
     , render_control_panel_section
         { m_on_help_clicked: Nothing
-        , title: "Interaction mode"
+        , m_title: Just "Interaction mode"
         , children:
             [ Cut_poly_at_pointer
             , Cut_largest_poly
@@ -237,10 +248,11 @@ render_control_panel st = HH.div
                 , help_btn \_ -> Set_dialog_state $ Just $ DS_interaction_mode_explanation im
                 ]
         }
-    , render_params st
     ]
+    <> render_params st
+    <> render_presets
 
-render_params :: forall m. MonadAff m => State -> Html m
+render_params :: forall m. MonadAff m => State -> Array (Html m)
 render_params st@{ params: Params params } =
     let hide_cut_params = case st.interaction_mode of
             Cut_poly_at_pointer -> false
@@ -252,13 +264,13 @@ render_params st@{ params: Params params } =
             Cut_largest_poly -> false
             Delete_poly_at_pointer -> true
             Change_poly_colour_at_pointer -> false
-    in HH.div_ $
+    in
     (if hide_cut_params then [] else
         [ render_control_panel_section
             { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_n_cuts_per_tick_explanation
-            , title: "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
+            , m_title: Just $ "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
             , children:
-                [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
+                [ HH.slot _slider SI_n_cuts_per_tick Slider.component
                     { id: "n_cuts_per_tick_slider"
                     , start: [ Int.toNumber params.n_cuts_per_tick ]
                     , show_pips: true
@@ -278,9 +290,9 @@ render_params st@{ params: Params params } =
             }
         , render_control_panel_section
             { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just $ DS_cut_ratio_explanation Simple
-            , title: "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
+            , m_title: Just $ "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
             , children:
-                [ HH.slot _slider "cut_ratio_slider" Slider.component
+                [ HH.slot _slider SI_cut_ratio Slider.component
                     { id: "cut_ratio_slider"
                     , start: [ params.cut_ratio ]
                     , show_pips: true
@@ -302,9 +314,9 @@ render_params st@{ params: Params params } =
     (if hide_col_and_lightness_params then [] else
         [ render_control_panel_section
             { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_hue_delta_explanation
-            , title: "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
+            , m_title: Just $ "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
             , children:
-                [ HH.slot _slider "hue_delta_slider" Slider.component
+                [ HH.slot _slider SI_hue_delta Slider.component
                     { id: "hue_delta_slider"
                     , start: [ params.hue_delta.min, params.hue_delta.max ]
                     , show_pips: true
@@ -325,9 +337,9 @@ render_params st@{ params: Params params } =
             }
         , render_control_panel_section
             { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_lightness_delta_explanation
-            , title: "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
+            , m_title: Just $ "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
             , children:
-                [ HH.slot _slider "lightness_delta_slider" Slider.component
+                [ HH.slot _slider SI_lightness_delta Slider.component
                     { id: "lightness_delta_slider"
                     , start: [ params.lightness_delta.min, params.lightness_delta.max ]
                     , show_pips: true
@@ -349,22 +361,100 @@ render_params st@{ params: Params params } =
         ]
     )
 
+render_presets :: forall m. Array (Html m)
+render_presets =
+    let presets =
+            [ Tuple "Tunnels"
+                { params: Params
+                    { n_cuts_per_tick: 5
+                    , cut_ratio: 0.13
+                    , hue_delta: { min: -0.0015, max: 0.0015 }
+                    , lightness_delta: { min: 0.0, max: 0.001 }
+                    }
+                , interaction_mode: Cut_poly_at_pointer
+                }
+            , Tuple "Wacky"
+                { params: Params
+                    { n_cuts_per_tick: 4
+                    , cut_ratio: 0.13
+                    , hue_delta: { min: -0.5, max: -0.499 }
+                    , lightness_delta: { min: 0.0, max: 0.001 }
+                    }
+                , interaction_mode: Cut_poly_at_pointer
+                }
+            , Tuple "Rainbow"
+                { params: Params
+                    { n_cuts_per_tick: 4
+                    , cut_ratio: 0.4
+                    , hue_delta: { min: -0.5, max: 0.5 }
+                    , lightness_delta: { min: -0.001, max: 0.01 }
+                    }
+                , interaction_mode: Cut_largest_poly
+                }
+            , Tuple "Tweak colour"
+                { params: Params
+                    { n_cuts_per_tick: 4
+                    , cut_ratio: 0.4
+                    , hue_delta: { min: 0.0, max: 0.02 }
+                    , lightness_delta: { min: 0.0, max: 0.0 }
+                    }
+                , interaction_mode: Change_poly_colour_at_pointer
+                }
+            , Tuple "Get lighter"
+                { params: Params
+                    { n_cuts_per_tick: 4
+                    , cut_ratio: 0.4
+                    , hue_delta: { min: 0.0, max: 0.0 }
+                    , lightness_delta: { min: 0.0, max: 0.02 }
+                    }
+                , interaction_mode: Change_poly_colour_at_pointer
+                }
+            , Tuple "Get darker"
+                { params: Params
+                    { n_cuts_per_tick: 4
+                    , cut_ratio: 0.4
+                    , hue_delta: { min: 0.0, max: 0.0 }
+                    , lightness_delta: { min: -0.02, max: 0.0 }
+                    }
+                , interaction_mode: Change_poly_colour_at_pointer
+                }
+            ]
+    in
+    [ render_control_panel_section
+        { m_on_help_clicked: Nothing
+        , m_title: Just "Presets"
+        , children:
+            [ HH.p_
+                [ HH.b_ [ HH.text "Tip:" ]
+                , HH.text " try short taps, long presses, starting with one preset then changing it up, etc."
+                ]
+            , HH.div_ $ presets # map \(Tuple name preset) -> HH.button
+                [ HE.onClick \_ -> Just $ Apply_preset preset ]
+                [ HH.text name ]
+            ]
+        }
+    ]
+
 render_control_panel_section :: forall m.
     { m_on_help_clicked :: Maybe (MouseEvent -> Action)
-    , title :: String
+    , m_title :: Maybe String
     , children :: Array (Html m)
     } -> Html m
-render_control_panel_section { m_on_help_clicked, title, children } = HH.div
+render_control_panel_section { m_on_help_clicked, m_title, children } = HH.div
     [ HP.classes [ ClassName "control_panel_section" ] ]
-    [ HH.div [ HP.classes [ ClassName "width100" ] ]
-        [ HH.h4
-            [ HP.class_ $ ClassName "control_panel_section_header" ] $
-            [ HH.text title ]
-            <> case m_on_help_clicked of
-                Nothing -> []
-                Just on_help_clicked -> [ help_btn on_help_clicked ]
-        , HH.div [ HP.classes [ ClassName "width100" ] ] children
-        ]
+    [ HH.div [ HP.classes [ ClassName "width100" ] ] $
+        (case m_title of
+            Nothing -> []
+            Just title ->
+                [ HH.h4
+                    [ HP.class_ $ ClassName "control_panel_section_header" ] $
+                    [ HH.text title ]
+                    <> case m_on_help_clicked of
+                        Nothing -> []
+                        Just on_help_clicked -> [ help_btn on_help_clicked ]
+                ]
+        )
+        <> [ HH.div [ HP.classes [ ClassName "width100" ] ] children ]
     ]
 
 help_btn :: forall m. (MouseEvent -> Action) -> Html m
@@ -531,10 +621,11 @@ render_dialog_ st ds =
                 , HH.p_ [ HH.b_ [ HH.text "How to use it" ] ]
                 , HH.p_ [ HH.text "Click/touch the coloured square to cut it into smaller pieces." ]
                 , HH.p_ [ HH.text "There are sliders to control things like how even the cuts are, how the colour changes, how the lightness changes, etc." ]
+                , HH.p_ [ HH.text "There are also a few presets to give you some ideas, but just messing around with it and trying things is a good strategy." ]
 
                 , HH.br_
                 , HH.p_ [ HH.b_ [ HH.text "If you get confused or want explanations" ] ]
-                , HH.p_ [ HH.text "Most of the parameters have explanations, accessible via the question mark icon next to the name. I'm planning on adding more helpful features like sensible presets; stay tuned." ]
+                , HH.p_ [ HH.text "Most of the parameters have explanations, accessible via the question mark icon next to the name." ]
 
                 , HH.br_
                 , HH.p_ [ HH.text "Have fun!" ]
@@ -565,6 +656,7 @@ data Action
     | Dialog_NoOp MouseEvent
     | Set_dialog_state (Maybe Dialog_state)
     | Handle_history_add_command History_add_command_info
+    | Apply_preset Preset
 
 data Set_param_action
     = Set_n_cuts_per_tick Int
@@ -656,6 +748,16 @@ handle_action = case _ of
         , last_executed_command_idx = info.last_executed_command_idx
         }
 
+    Apply_preset preset -> do
+        handle_action $ Set_interaction_mode preset.interaction_mode
+        st <- H.modify _ { params = preset.params }
+        liftEffect $ set_params st
+        let Params params = preset.params
+        void $ H.query _slider SI_n_cuts_per_tick $ H.tell $ Slider.Set_values [Int.toNumber params.n_cuts_per_tick]
+        void $ H.query _slider SI_cut_ratio $ H.tell $ Slider.Set_values [params.cut_ratio]
+        void $ H.query _slider SI_hue_delta $ H.tell $ Slider.Set_values [params.hue_delta.min, params.hue_delta.max]
+        void $ H.query _slider SI_lightness_delta $ H.tell $ Slider.Set_values [params.lightness_delta.min, params.lightness_delta.max]
+
 handle_set_param_action :: forall m. MonadEffect m => Set_param_action -> M m Unit
 handle_set_param_action = case _ of
     Set_n_cuts_per_tick n -> H.modify_ $ Lens.set _n_cuts_per_tick n
@@ -717,3 +819,5 @@ _draw_pointer_crosshair = prop (SProxy :: SProxy "draw_pointer_crosshair")
 
 derive instance eqInteraction_mode :: Eq Interaction_mode
 derive instance newtypeParams :: Newtype Params _
+derive instance eqSlider_id :: Eq Slider_id
+derive instance ordSlider_id :: Ord Slider_id

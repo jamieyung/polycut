@@ -163,9 +163,7 @@ function reset_canvas() {
   lines = [mk_line(p00, p10), mk_line(p10, p11), mk_line(p11, p01), mk_line(p01, p00)]
   flash_lines = []
 
-  for (const poly of polygons) {
-    polygons_container.removeChild(poly.graphics)
-  }
+  polygons_container.removeChildren()
   const first_poly = mk_poly([p00, p10, p11, p01])
   const h = Math.random()
   const s = Math.random()
@@ -173,6 +171,8 @@ function reset_canvas() {
   set_poly_colour(first_poly, h, s, l)
   polygons_container.addChild(first_poly.graphics)
   polygons = [first_poly]
+
+  debug_lines_container.removeChildren()
 
   history = []
 
@@ -238,13 +238,14 @@ function handle_pointer_is_down() {
       if (idx !== -1) cut_poly(idx)
     }
   } else if (action === ACTION_CUT_LARGEST_POLY) {
-    cut_n_polys()
+    const n = params.n_cuts_per_tick
+    for (let i = 0; i < n; i++) {
+      cut_poly(polygons.length - 1) // largest one
+    }
   } else if (action === ACTION_DELETE_POLY_AT_POINTER) {
       const idx = get_poly_at_pointer()
       if (idx !== -1) {
-        var poly = polygons[idx]
-        polygons_container.removeChild(poly.graphics)
-        polygons.splice(idx, 1)
+        delete_poly_at(idx)
       }
   } else if (action == ACTION_CHANGE_POLY_COLOUR_AT_POINTER) {
       const idx = get_poly_at_pointer()
@@ -278,21 +279,20 @@ function pt_inside_poly(verts, x, y) {
   return c
 }
 
-function cut_n_polys() {
-  const n = params.n_cuts_per_tick
-  for (let i = 0; i < n; i++) {
-    cut_poly(-1)
-  }
+function delete_poly_at(idx) {
+    var poly = polygons[idx]
+    if (!poly) return
+    polygons_container.removeChild(poly.graphics)
+    polygons.splice(idx, 1)
 }
 
 // CUT POLY ===================================================================
 
-// if poly_idx is out of range, ignores it and uses the largest poly.
 function cut_poly(poly_idx) {
   const n_polys = polygons.length
   if (n_polys === 0) return
-  if (poly_idx < 0 || poly_idx >= n_polys) poly_idx = n_polys - 1 // largest one
   const poly = polygons[poly_idx]
+  if (!poly) return
 
   // u, v <- two random points along circumference iterated a bunch of times, keep the two with the smallest euclidean distance
   let smallest_dist = Number.MAX_SAFE_INTEGER
@@ -369,8 +369,7 @@ function cut_poly(poly_idx) {
   const p2 = mk_poly(p2_verts)
   set_child_colour_based_on_parent_colour(poly, p1)
   set_child_colour_based_on_parent_colour(poly, p2)
-  polygons.splice(poly_idx, 1)
-  polygons_container.removeChild(poly.graphics)
+  delete_poly_at(poly_idx)
   polygons_container.addChild(p1.graphics)
   polygons_container.addChild(p2.graphics)
   const p1_idx = insert_poly(p1)

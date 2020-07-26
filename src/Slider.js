@@ -34,12 +34,21 @@ exports.init_no_ui_slider = function (st) {
       el.dispatchEvent(new CustomEvent("slider_update", { detail: values.map(st.format.from) }))
     })
 
-    return el
+    return {
+      el: el,
+      config: config
+    }
   }
 }
 
-exports.to_event_target = function (el) {
-  return el
+exports.to_event_target = function (x) {
+  return x.el
+}
+
+exports.set_values = function (x, values) {
+  return function () {
+    x.el.noUiSlider.set(values.map(x.config.format.to))
+  }
 }
 
 exports.slider_update_listener = function (f) {
