@@ -17,7 +17,7 @@ let resolution
 let app
 let polygons_container
 let flash_lines_graphics
-let debug_lines_graphics
+let debug_lines_container
 let pointer_crosshair_graphics
 let canvas_container_el
 let pointer_is_down
@@ -75,7 +75,10 @@ exports.set_action_change_poly_colour_at_pointer = function () {
 exports.set_params = function (state) {
   return function () {
     params = state.params
+
     params.draw_debug_lines = state.draw_debug_lines
+    debug_lines_container.visible = params.draw_debug_lines
+
     params.draw_pointer_crosshair = state.draw_pointer_crosshair
   }
 }
@@ -96,8 +99,8 @@ exports.init = function () {
 
   flash_lines_graphics = new PIXI.Graphics()
   app.stage.addChild(flash_lines_graphics)
-  debug_lines_graphics = new PIXI.Graphics()
-  app.stage.addChild(debug_lines_graphics)
+  debug_lines_container = new PIXI.Container()
+  app.stage.addChild(debug_lines_container)
   pointer_crosshair_graphics = new PIXI.Graphics()
   app.stage.addChild(pointer_crosshair_graphics)
 
@@ -200,16 +203,6 @@ function tick() {
     const x1 = lerp(flash_line.u.x, flash_line.v.x, ratio1)
     const y1 = lerp(flash_line.u.y, flash_line.v.y, ratio1)
     flash_lines_graphics.lineTo(x1, y1)
-  }
-
-  debug_lines_graphics.clear()
-  if (params.draw_debug_lines) {
-    debug_lines_graphics.lineStyle(1, 0xff00ff)
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      debug_lines_graphics.moveTo(line.u.x, line.u.y)
-      debug_lines_graphics.lineTo(line.v.x, line.v.y)
-    }
   }
 
   pointer_crosshair_graphics.clear()
@@ -326,6 +319,13 @@ function cut_poly(poly_idx) {
     v: line.v,
     ticks_left: FLASH_LINE_INITIAL_TICKS_LEFT
   })
+
+  const debug_line_graphic = new PIXI.Graphics()
+  debug_line_graphic.lineStyle(1, 0xff00ff)
+  debug_line_graphic.moveTo(line.u.x, line.u.y)
+  debug_line_graphic.lineTo(line.v.x, line.v.y)
+  debug_lines_container.addChild(debug_line_graphic)
+
   const n_verts = poly.verts.length
 
   // init poly 1 to be u, then add all the verts up to but not including v.idx, then add v

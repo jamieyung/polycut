@@ -48,21 +48,23 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- DONE save image
 -- DONE change poly colour based on cur settings
 -- DONE fix png download on safari
+-- DONE fix debug lines for small areas
+
+-- TODO save presets
+-- TODO undo/redo
+-- TODO add splash screen for first load
 
 -- TODO add license
--- TODO undo/redo
 -- TODO multitouch
 -- TODO kbd shortcuts
 -- TODO kbd shortcuts help text/popup
 -- TODO have radio button choice for which property is controlled by x/y
 -- TODO set poly colour
--- TODO save presets
 -- TODO delete poly
 -- TODO replays
 -- TODO setting for resolution
 -- TODO mode to make split with pointer start/end pos
 -- TODO hide control panel
--- TODO add splash screen for first load
 -- TODO fullscreen
 -- TODO base colours on an image (specify how many colours to take from the image)
 -- TODO hover over poly and get a color picker
@@ -72,7 +74,6 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODO brush falloff
 -- TODO min/max lightness
 -- TODO replay gallery
--- TODO fix debug lines for small areas
 -- TODO debug line colour
 -- TODO flesh out lines as options
 -- TODO optimize poly representation
@@ -528,8 +529,8 @@ handle_action = case _ of
         st <- H.get
         liftEffect $ set_pointer_is_down false
         liftEffect set_action_cut_poly_at_pointer
-        liftEffect $ set_params st
         liftEffect init
+        liftEffect $ set_params st
 
         canvas_container <- liftEffect get_canvas_container_event_target
 
