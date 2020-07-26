@@ -4,22 +4,25 @@ const trace = console.log
 
 const DIM = 800
 
-const ACTION_NO_OP = 0
 const ACTION_CUT_POLY_AT_POINTER = 1
 const ACTION_CUT_LARGEST_POLY = 2
 const ACTION_DELETE_POLY_AT_POINTER = 3
+const ACTION_CHANGE_POLY_COLOUR_AT_POINTER = 4
 
 const FLASH_LINE_INITIAL_TICKS_LEFT = 30
 
 // VARIABLES ==================================================================
 
+let hsl_to_hex
+
 let resolution
 let app
 let polygons_container
 let flash_lines_graphics
-let debug_lines_graphics
-let debug_pointer_crosshair_graphics
+let debug_lines_container
+let pointer_crosshair_graphics
 let canvas_container_el
+let pointer_is_down
 let px_pct // pointer x as frac of DIM
 let py_pct // pointer y as frac of DIM
 let last_executed_command_idx // if > -1, means at state just after performing history[last_executed_command_idx]
@@ -49,8 +52,10 @@ exports.update_px_py = function (px, py) {
   }
 }
 
-exports.set_action_no_op = function () {
-  action = ACTION_NO_OP
+exports.set_pointer_is_down = function (b) {
+  return function () {
+    pointer_is_down = b
+  }
 }
 
 exports.set_action_cut_poly_at_pointer = function () {
@@ -65,49 +70,62 @@ exports.set_action_delete_poly_at_pointer = function () {
   action = ACTION_DELETE_POLY_AT_POINTER
 }
 
-exports.set_params_impl = function (s) {
+exports.set_action_change_poly_colour_at_pointer = function () {
+  action = ACTION_CHANGE_POLY_COLOUR_AT_POINTER
+}
+
+exports.set_params = function (state) {
   return function () {
-    params = s
+    params = state.params
+
+    params.draw_debug_lines = state.draw_debug_lines
+    debug_lines_container.visible = params.draw_debug_lines
+
+    params.draw_pointer_crosshair = state.draw_pointer_crosshair
   }
 }
 
-exports.init = function () {
-  resolution = 2*(window.devicePixelRatio || 1)
-  app = new PIXI.Application({
-    width: DIM,
-    height: DIM,
-    backgroundColor: 0xffffff,
-    resolution: resolution,
-    antialias: true,
-    preserveDrawingBuffer: true
-  })
+exports.init = function (args) {
+  return function () {
+    hsl_to_hex = args.hsl_to_hex
 
-  polygons_container = new PIXI.Container()
-  app.stage.addChild(polygons_container)
+    resolution = 2*(window.devicePixelRatio || 1)
+    app = new PIXI.Application({
+      width: DIM,
+      height: DIM,
+      backgroundColor: 0xffffff,
+      resolution: resolution,
+      antialias: true,
+      preserveDrawingBuffer: true
+    })
 
-  flash_lines_graphics = new PIXI.Graphics()
-  app.stage.addChild(flash_lines_graphics)
-  debug_lines_graphics = new PIXI.Graphics()
-  app.stage.addChild(debug_lines_graphics)
-  debug_pointer_crosshair_graphics = new PIXI.Graphics()
-  app.stage.addChild(debug_pointer_crosshair_graphics)
+    polygons_container = new PIXI.Container()
+    app.stage.addChild(polygons_container)
 
-  canvas_container_el = document.getElementById("canvas_container")
-  canvas_container_el.appendChild(app.view)
+    flash_lines_graphics = new PIXI.Graphics()
+    app.stage.addChild(flash_lines_graphics)
+    debug_lines_container = new PIXI.Container()
+    app.stage.addChild(debug_lines_container)
+    pointer_crosshair_graphics = new PIXI.Graphics()
+    app.stage.addChild(pointer_crosshair_graphics)
 
-  window.onresize = resize
+    canvas_container_el = document.getElementById("canvas_container")
+    canvas_container_el.appendChild(app.view)
 
-  px_pct = 0
-  py_pct = 0
+    window.onresize = resize
 
-  polygons = []
-  lines = []
-  flash_lines = []
+    px_pct = 0
+    py_pct = 0
 
-  reset_canvas()
-  resize()
+    polygons = []
+    lines = []
+    flash_lines = []
 
-  app.ticker.add(tick)
+    reset_canvas()
+    resize()
+
+    app.ticker.add(tick)
+  }
 }
 
 function resize() {
@@ -115,16 +133,17 @@ function resize() {
   const h = window.innerHeight
   const window_ratio = w/h
 
+  const root = document.getElementById("root")
   if (window_ratio < 0.8) { // very tall
-    document.body.style["flex-direction"] = "column"
+    root.style["flex-direction"] = "column"
     canvas_container_el.style["width"] = "100%"
     canvas_container_el.style["height"] = w + "px"
   } else if (window_ratio > 1.5) { // very wide
-    document.body.style["flex-direction"] = "row"
+    root.style["flex-direction"] = "row"
     canvas_container_el.style["height"] = "100%"
     canvas_container_el.style["width"] = h + "px"
   } else { // roughly square
-    document.body.style["flex-direction"] = "row"
+    root.style["flex-direction"] = "row"
     canvas_container_el.style["height"] = "100%"
     canvas_container_el.style["width"] = (w*0.65) + "px"
   }
@@ -144,15 +163,16 @@ function reset_canvas() {
   lines = [mk_line(p00, p10), mk_line(p10, p11), mk_line(p11, p01), mk_line(p01, p00)]
   flash_lines = []
 
-  for (const poly of polygons) {
-    polygons_container.removeChild(poly.poly)
-  }
+  polygons_container.removeChildren()
+  const first_poly = mk_poly([p00, p10, p11, p01])
   const h = Math.random()
   const s = Math.random()
   const l = lerp(0.1, 0.6, Math.random())
-  const first_poly = mk_poly([p00, p10, p11, p01], h, s, l)
-  polygons_container.addChild(first_poly.poly)
+  set_poly_colour(first_poly, h, s, l)
+  polygons_container.addChild(first_poly.graphics)
   polygons = [first_poly]
+
+  debug_lines_container.removeChildren()
 
   history = []
 
@@ -162,20 +182,21 @@ function reset_canvas() {
 exports.reset_canvas = reset_canvas
 
 exports.save_as_png = function() {
-  const el = document.createElement("a")
-  el.setAttribute("href", app.view.toDataURL())
-  el.setAttribute("download", "image.png")
-  el.style.display = "none"
-  document.body.appendChild(el)
-  el.click()
-  document.body.removeChild(el)
+  app.view.toBlob((blob) => {
+    saveAs(blob, "image.png")
+  })
+}
+
+exports.history_add_command_listener = function (f) {
+  return function (event) {
+    return f(event.detail)
+  }
 }
 
 // TICK =======================================================================
 
 function tick() {
   flash_lines_graphics.clear()
-
   for (let i = flash_lines.length - 1; i >= 0; i--) {
     const flash_line = flash_lines[i]
     if (flash_line.ticks_left === 0) {
@@ -195,26 +216,21 @@ function tick() {
     flash_lines_graphics.lineTo(x1, y1)
   }
 
-  debug_lines_graphics.clear()
-  if (params.draw_debug_lines) {
-    debug_lines_graphics.lineStyle(1, 0xff00ff)
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      debug_lines_graphics.moveTo(line.u.x, line.u.y)
-      debug_lines_graphics.lineTo(line.v.x, line.v.y)
+  pointer_crosshair_graphics.clear()
+  if (params.draw_pointer_crosshair) {
+    if (action === ACTION_CUT_POLY_AT_POINTER || action === ACTION_DELETE_POLY_AT_POINTER || action === ACTION_CHANGE_POLY_COLOUR_AT_POINTER) {
+      pointer_crosshair_graphics.lineStyle(2, 0xff00ff)
+      pointer_crosshair_graphics.moveTo(DIM*px_pct, 0)
+      pointer_crosshair_graphics.lineTo(DIM*px_pct, DIM)
+      pointer_crosshair_graphics.moveTo(0, DIM*py_pct)
+      pointer_crosshair_graphics.lineTo(DIM, DIM*py_pct)
     }
   }
 
-  debug_pointer_crosshair_graphics.clear()
-  if (params.draw_pointer_crosshair) {
-    debug_pointer_crosshair_graphics.lineStyle(1, 0xff00ff)
-    debug_pointer_crosshair_graphics.moveTo(DIM*px_pct, 0)
-    debug_pointer_crosshair_graphics.lineTo(DIM*px_pct, DIM)
-    debug_pointer_crosshair_graphics.moveTo(0, DIM*py_pct)
-    debug_pointer_crosshair_graphics.lineTo(DIM, DIM*py_pct)
-  }
+  if (pointer_is_down) handle_pointer_is_down()
+}
 
-  // handle action
+function handle_pointer_is_down() {
   if (action === ACTION_CUT_POLY_AT_POINTER) {
     const n = params.n_cuts_per_tick
     for (let i = 0; i < n; i++) {
@@ -222,13 +238,20 @@ function tick() {
       if (idx !== -1) cut_poly(idx)
     }
   } else if (action === ACTION_CUT_LARGEST_POLY) {
-    cut_n_polys()
+    const n = params.n_cuts_per_tick
+    for (let i = 0; i < n; i++) {
+      cut_poly(polygons.length - 1) // largest one
+    }
   } else if (action === ACTION_DELETE_POLY_AT_POINTER) {
       const idx = get_poly_at_pointer()
       if (idx !== -1) {
+        delete_poly_at(idx)
+      }
+  } else if (action == ACTION_CHANGE_POLY_COLOUR_AT_POINTER) {
+      const idx = get_poly_at_pointer()
+      if (idx !== -1) {
         var poly = polygons[idx]
-        polygons_container.removeChild(poly.poly)
-        polygons.splice(idx, 1)
+        set_child_colour_based_on_parent_colour(poly, poly)
       }
   }
 }
@@ -256,21 +279,20 @@ function pt_inside_poly(verts, x, y) {
   return c
 }
 
-function cut_n_polys() {
-  const n = params.n_cuts_per_tick
-  for (let i = 0; i < n; i++) {
-    cut_poly(-1)
-  }
+function delete_poly_at(idx) {
+    var poly = polygons[idx]
+    if (!poly) return
+    polygons_container.removeChild(poly.graphics)
+    polygons.splice(idx, 1)
 }
 
 // CUT POLY ===================================================================
 
-// if poly_idx is out of range, ignores it and uses the largest poly.
 function cut_poly(poly_idx) {
   const n_polys = polygons.length
   if (n_polys === 0) return
-  if (poly_idx < 0 || poly_idx >= n_polys) poly_idx = n_polys - 1 // largest one
   const poly = polygons[poly_idx]
+  if (!poly) return
 
   // u, v <- two random points along circumference iterated a bunch of times, keep the two with the smallest euclidean distance
   let smallest_dist = Number.MAX_SAFE_INTEGER
@@ -308,6 +330,13 @@ function cut_poly(poly_idx) {
     v: line.v,
     ticks_left: FLASH_LINE_INITIAL_TICKS_LEFT
   })
+
+  const debug_line_graphic = new PIXI.Graphics()
+  debug_line_graphic.lineStyle(1, 0xff00ff)
+  debug_line_graphic.moveTo(line.u.x, line.u.y)
+  debug_line_graphic.lineTo(line.v.x, line.v.y)
+  debug_lines_container.addChild(debug_line_graphic)
+
   const n_verts = poly.verts.length
 
   // init poly 1 to be u, then add all the verts up to but not including v.idx, then add v
@@ -336,20 +365,13 @@ function cut_poly(poly_idx) {
     i++
   }
 
-  const h1 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
-  const h2 = (poly.h + lerp(params.hue_delta_min, params.hue_delta_max, Math.random()) + 1)%1
-
-  const s = 1
-
-  const l1 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
-  const l2 = clamp(0, 1, poly.l + lerp(params.lightness_delta_min, params.lightness_delta_max, Math.random()))
-
-  const p1 = mk_poly(p1_verts, h1, s, l1)
-  const p2 = mk_poly(p2_verts, h2, s, l2)
-  polygons.splice(poly_idx, 1)
-  polygons_container.removeChild(poly.poly)
-  polygons_container.addChild(p1.poly)
-  polygons_container.addChild(p2.poly)
+  const p1 = mk_poly(p1_verts)
+  const p2 = mk_poly(p2_verts)
+  set_child_colour_based_on_parent_colour(poly, p1)
+  set_child_colour_based_on_parent_colour(poly, p2)
+  delete_poly_at(poly_idx)
+  polygons_container.addChild(p1.graphics)
+  polygons_container.addChild(p2.graphics)
   const p1_idx = insert_poly(p1)
   const p2_idx = insert_poly(p2)
 
@@ -360,15 +382,20 @@ function cut_poly(poly_idx) {
     p1: p1,
     p2_idx: p2_idx,
     p2: p2,
-    line: line
+    line: line,
+    debug_line_graphic: debug_line_graphic
   }
-  if (last_executed_command_idx === history.length - 1) { // at the head, add the command
-    history.push(command)
-  } else { // not at the head, need to throw away the commands after the current pos before adding the command
+  if (last_executed_command_idx < history.length - 1) { // not at the head, need to throw away the commands after the current pos before adding the command
     history = history.slice(0, last_executed_command_idx + 1)
-    history.push(command)
   }
+  history.push(command)
   last_executed_command_idx++
+  canvas_container_el.dispatchEvent(new CustomEvent("history_add_command", {
+    detail: {
+      last_executed_command_idx: last_executed_command_idx,
+      history_size: history.length
+    }
+  }))
 }
 
 // returns the insertion index
@@ -423,19 +450,32 @@ function mk_line(u, v) {
   }
 }
 
-function mk_poly(verts, h, s, l) {
-  const poly = new PIXI.Graphics()
-  const hex = hsl_to_hex(h, s, l)
-  poly.beginFill(hex).lineStyle(0).drawPolygon(verts).endFill()
+function set_child_colour_based_on_parent_colour(parent_poly, child_poly) {
+  const h = (parent_poly.h + lerp(params.hue_delta.min, params.hue_delta.max, Math.random()) + 1)%1
+  const s = 1
+  const l = clamp(0, 1, parent_poly.l + lerp(params.lightness_delta.min, params.lightness_delta.max, Math.random()))
+  set_poly_colour(child_poly, h, s, l)
+}
+
+function set_poly_colour(poly, h, s, l) {
+  poly.h = h
+  poly.s = s
+  poly.l = l
+  poly.hex = hsl_to_hex(h, s, l)
+  poly.graphics.clear()
+  poly.graphics.beginFill(poly.hex).lineStyle(0).drawPolygon(poly.verts).endFill()
+}
+
+function mk_poly(verts) {
   const ret = {
     circumference: 0,
     verts: verts,
     line_length_to_idx: [],
-    h: h,
-    s: s,
-    l: l,
-    hex: hex,
-    poly: poly
+    h: 0,
+    s: 0,
+    l: 0,
+    hex: 0,
+    graphics: new PIXI.Graphics()
   }
 
   const n = verts.length
@@ -483,33 +523,4 @@ function distance_squared(v0, v1) {
   const a = v1.x - v0.x
   const b = v1.y - v0.y
   return a*a + b*b
-}
-
-// HSL TO HEX =================================================================
-
-// hsl logic based on
-// https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
-
-// h,s,l in [0, 1]
-function hsl_to_hex(h, s, l) {
-  let r, g, b
-  if (s === 0) {
-    r = g = b = l // achromatic
-  } else {
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-    const p = 2 * l - q
-    r = hue_to_rgb(p, q, h + 1/3)
-    g = hue_to_rgb(p, q, h)
-    b = hue_to_rgb(p, q, h - 1/3)
-  }
-  return (Math.round(r*255)<<16) + (Math.round(g*255)<<8) + Math.round(b*255)
-}
-
-function hue_to_rgb(p, q, t) {
-  if (t < 0) t += 1
-  if (t > 1) t -= 1
-  if (t < 1 / 6) return p + (q - p) * 6 * t
-  if (t < 1 / 2) return q
-  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-  return p
 }

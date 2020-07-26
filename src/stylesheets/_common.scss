@@ -1,30 +1,22 @@
+$primary: #0ae;
+$dark: #000;
+
+$pad-xs: 0.2rem;
+$pad-sm: 0.6rem;
+$pad-md: 0.9rem;
+
+$border-radius-md: 7px;
+
 .width100 {
     width: 100%;
 }
 
-/* =============================================================================
- * Always show scrollbar on android
- * https://stackoverflow.com/questions/42080282/scrollbar-doesnt-show-on-mobile-device/42101413
- */
-
-::-webkit-scrollbar {
-   -webkit-appearance: none;
+.flex_center_h {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
 }
 
-::-webkit-scrollbar:vertical {
-   width: 10px;
-}
-
-::-webkit-scrollbar:horizontal {
-   height: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-   background-color: #ccc;
-   border-radius: 10px;
-   border: 2px solid #eee;
-}
-
-::-webkit-scrollbar-track {
-   background-color: #eee;
+input[type=radio] {
+    margin-right: $pad-xs;
 }
