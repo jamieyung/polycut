@@ -173,13 +173,9 @@ function reset_canvas() {
 exports.reset_canvas = reset_canvas
 
 exports.save_as_png = function() {
-  const el = document.createElement("a")
-  el.setAttribute("href", app.view.toDataURL())
-  el.setAttribute("download", "image.png")
-  el.style.display = "none"
-  document.body.appendChild(el)
-  el.click()
-  document.body.removeChild(el)
+  app.view.toBlob((blob) => {
+    saveAs(blob, "image.png")
+  })
 }
 
 // TICK =======================================================================

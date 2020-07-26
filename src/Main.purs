@@ -46,6 +46,8 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -------------------------------------------------------------------------------
 
 -- DONE save image
+-- DONE change poly colour based on cur settings
+-- DONE fix png download on safari
 
 -- TODO add license
 -- TODO undo/redo
@@ -53,11 +55,10 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODO kbd shortcuts
 -- TODO kbd shortcuts help text/popup
 -- TODO have radio button choice for which property is controlled by x/y
--- TODO change poly colour based on cur settings
 -- TODO set poly colour
 -- TODO save presets
 -- TODO delete poly
--- TODO save replay
+-- TODO replays
 -- TODO setting for resolution
 -- TODO mode to make split with pointer start/end pos
 -- TODO hide control panel
@@ -66,6 +67,15 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODO base colours on an image (specify how many colours to take from the image)
 -- TODO hover over poly and get a color picker
 -- TODO? maybe probability histogram for hue and lightness?
+-- TODO brush to make colours more similar to the ones around them
+-- TODO brush size
+-- TODO brush falloff
+-- TODO min/max lightness
+-- TODO replay gallery
+-- TODO fix debug lines for small areas
+-- TODO debug line colour
+-- TODO flesh out lines as options
+-- TODO optimize poly representation
 
 -------------------------------------------------------------------------------
 -- Main -----------------------------------------------------------------------
