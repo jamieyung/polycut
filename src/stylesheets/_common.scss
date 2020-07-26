@@ -10,3 +10,9 @@ $border-radius-md: 7px;
 .width100 {
     width: 100%;
 }
+
+.flex_center_h {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}

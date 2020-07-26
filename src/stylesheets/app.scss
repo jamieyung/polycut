@@ -73,9 +73,17 @@ h4 {
 }
 
 .noUi-target {
-    margin-bottom: 2em;
-    margin-left: 1em;
-    margin-right: 1em;
+    margin: 1em;
+    margin-bottom: 3em;
+}
+
+// Allow vertical scrolling when touching slider
+.noUi-pips, .noUi-target, .noUi-target * {
+    touch-action: pan-y;
+}
+
+.noUi-pips .noUi-value {
+    margin-top: 0.3em;
 }
 
 #canvas_container {

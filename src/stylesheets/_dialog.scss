@@ -19,10 +19,20 @@
         display: flex;
         flex-direction: column;
         background-color: white;
-        max-width: 80vw;
-        max-height: 70vh;
-        min-width: 60vw;
-        min-height: 20vh;
+
+        @media (min-width: 768px) {
+            max-width: 60vw;
+            max-height: 90vh;
+            min-width: 60vw;
+            min-height: 50vh;
+        }
+
+        @media (max-width: 767px) {
+            max-width: 90vw;
+            max-height: 90vh;
+            min-width: 80vw;
+            min-height: 80vh;
+        }
 
         #dialog_header {
             width: 100%;
@@ -46,12 +56,27 @@
         }
 
         #dialog_contents {
+            overflow-y: auto;
             width: 100%;
             height: 100%;
             padding: $pad-sm;
 
             p:not(:first-child) {
                 margin-top: $pad-sm;
+            }
+
+            @media (min-width: 768px) {
+                .hue_wheel_img {
+                    width: 20vw;
+                    height: 20vw;
+                }
+            }
+
+            @media (max-width: 767px) {
+                .hue_wheel_img {
+                    width: 40vw;
+                    height: 40vw;
+                }
             }
         }
     }

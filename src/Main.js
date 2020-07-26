@@ -13,6 +13,8 @@ const FLASH_LINE_INITIAL_TICKS_LEFT = 30
 
 // VARIABLES ==================================================================
 
+let hsl_to_hex
+
 let resolution
 let app
 let polygons_container
@@ -83,43 +85,47 @@ exports.set_params = function (state) {
   }
 }
 
-exports.init = function () {
-  resolution = 2*(window.devicePixelRatio || 1)
-  app = new PIXI.Application({
-    width: DIM,
-    height: DIM,
-    backgroundColor: 0xffffff,
-    resolution: resolution,
-    antialias: true,
-    preserveDrawingBuffer: true
-  })
+exports.init = function (args) {
+  return function () {
+    hsl_to_hex = args.hsl_to_hex
 
-  polygons_container = new PIXI.Container()
-  app.stage.addChild(polygons_container)
+    resolution = 2*(window.devicePixelRatio || 1)
+    app = new PIXI.Application({
+      width: DIM,
+      height: DIM,
+      backgroundColor: 0xffffff,
+      resolution: resolution,
+      antialias: true,
+      preserveDrawingBuffer: true
+    })
 
-  flash_lines_graphics = new PIXI.Graphics()
-  app.stage.addChild(flash_lines_graphics)
-  debug_lines_container = new PIXI.Container()
-  app.stage.addChild(debug_lines_container)
-  pointer_crosshair_graphics = new PIXI.Graphics()
-  app.stage.addChild(pointer_crosshair_graphics)
+    polygons_container = new PIXI.Container()
+    app.stage.addChild(polygons_container)
 
-  canvas_container_el = document.getElementById("canvas_container")
-  canvas_container_el.appendChild(app.view)
+    flash_lines_graphics = new PIXI.Graphics()
+    app.stage.addChild(flash_lines_graphics)
+    debug_lines_container = new PIXI.Container()
+    app.stage.addChild(debug_lines_container)
+    pointer_crosshair_graphics = new PIXI.Graphics()
+    app.stage.addChild(pointer_crosshair_graphics)
 
-  window.onresize = resize
+    canvas_container_el = document.getElementById("canvas_container")
+    canvas_container_el.appendChild(app.view)
 
-  px_pct = 0
-  py_pct = 0
+    window.onresize = resize
 
-  polygons = []
-  lines = []
-  flash_lines = []
+    px_pct = 0
+    py_pct = 0
 
-  reset_canvas()
-  resize()
+    polygons = []
+    lines = []
+    flash_lines = []
 
-  app.ticker.add(tick)
+    reset_canvas()
+    resize()
+
+    app.ticker.add(tick)
+  }
 }
 
 function resize() {
@@ -181,11 +187,16 @@ exports.save_as_png = function() {
   })
 }
 
+exports.history_add_command_listener = function (f) {
+  return function (event) {
+    return f(event.detail)
+  }
+}
+
 // TICK =======================================================================
 
 function tick() {
   flash_lines_graphics.clear()
-
   for (let i = flash_lines.length - 1; i >= 0; i--) {
     const flash_line = flash_lines[i]
     if (flash_line.ticks_left === 0) {
@@ -372,15 +383,20 @@ function cut_poly(poly_idx) {
     p1: p1,
     p2_idx: p2_idx,
     p2: p2,
-    line: line
+    line: line,
+    debug_line_graphic: debug_line_graphic
   }
-  if (last_executed_command_idx === history.length - 1) { // at the head, add the command
-    history.push(command)
-  } else { // not at the head, need to throw away the commands after the current pos before adding the command
+  if (last_executed_command_idx < history.length - 1) { // not at the head, need to throw away the commands after the current pos before adding the command
     history = history.slice(0, last_executed_command_idx + 1)
-    history.push(command)
   }
+  history.push(command)
   last_executed_command_idx++
+  canvas_container_el.dispatchEvent(new CustomEvent("history_add_command", {
+    detail: {
+      last_executed_command_idx: last_executed_command_idx,
+      history_size: history.length
+    }
+  }))
 }
 
 // returns the insertion index
@@ -508,33 +524,4 @@ function distance_squared(v0, v1) {
   const a = v1.x - v0.x
   const b = v1.y - v0.y
   return a*a + b*b
-}
-
-// HSL TO HEX =================================================================
-
-// hsl logic based on
-// https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
-
-// h,s,l in [0, 1]
-function hsl_to_hex(h, s, l) {
-  let r, g, b
-  if (s === 0) {
-    r = g = b = l // achromatic
-  } else {
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-    const p = 2 * l - q
-    r = hue_to_rgb(p, q, h + 1/3)
-    g = hue_to_rgb(p, q, h)
-    b = hue_to_rgb(p, q, h - 1/3)
-  }
-  return (Math.round(r*255)<<16) + (Math.round(g*255)<<8) + Math.round(b*255)
-}
-
-function hue_to_rgb(p, q, t) {
-  if (t < 0) t += 1
-  if (t > 1) t -= 1
-  if (t < 1 / 6) return p + (q - p) * 6 * t
-  if (t < 1 / 2) return q
-  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-  return p
 }

@@ -1,30 +1,34 @@
 exports.init_no_ui_slider = function (st) {
   return function () {
-    var el = document.getElementById(st.id)
+    const el = document.getElementById(st.id)
 
-    var range = {}
+    const range = {}
     for (x of st.range) {
       range[x.k] = [x.v, x.step]
     }
 
-    var slider = noUiSlider.create(el, {
+    const config = {
       range: range,
       behaviour: "drag",
       start: st.start.map(st.format.to),
       connect: true,
-      pips: {
+      format: {
+        to: st.format.to,
+        from: st.format.from
+      }
+    }
+    if (st.show_pips) {
+      config.pips = {
         mode: "range",
         density: 3,
         format: {
           to: st.format.to,
           from: st.format.from
         }
-      },
-      format: {
-        to: st.format.to,
-        from: st.format.from
       }
-    })
+    }
+
+    const slider = noUiSlider.create(el, config)
 
     slider.on("update", function (values) {
       el.dispatchEvent(new CustomEvent("slider_update", { detail: values.map(st.format.from) }))

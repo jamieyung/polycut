@@ -49,6 +49,7 @@ type State =
     { id :: String
     , start :: Array Number
     , range :: Array { k :: String, v :: Number, step :: Number }
+    , show_pips :: Boolean
     , format ::
         { to :: Number -> String
         , from :: String -> Number

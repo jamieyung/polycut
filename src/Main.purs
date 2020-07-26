@@ -27,11 +27,12 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.Query.EventSource (eventListenerEventSource)
 import Halogen.VDom.Driver (runUI)
-import Math (abs)
+import HueDeltaExplanation as HueDeltaExplanation
 import Slider (format_as_percentage)
 import Slider as Slider
+import Util (Hsl_to_hex, Number_range, hsl_to_hex, n_decimal_places_for_hue_and_lightness, render_range)
 import Web.DOM.ParentNode (QuerySelector(..))
-import Web.Event.Event (stopPropagation)
+import Web.Event.Event (Event, EventType(..), preventDefault, stopPropagation)
 import Web.Event.EventTarget (EventTarget)
 import Web.TouchEvent.EventTypes (touchcancel, touchend, touchmove, touchstart)
 import Web.TouchEvent.Touch as T
@@ -49,25 +50,25 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- DONE change poly colour based on cur settings
 -- DONE fix png download on safari
 -- DONE fix debug lines for small areas
+-- DONE delete poly
+
+-- TODO add splash screen for first load
 
 -- TODO save presets
 -- TODO undo/redo
--- TODO add splash screen for first load
-
 -- TODO add license
 -- TODO multitouch
 -- TODO kbd shortcuts
 -- TODO kbd shortcuts help text/popup
 -- TODO have radio button choice for which property is controlled by x/y
 -- TODO set poly colour
--- TODO delete poly
+-- TODO hover over poly and get a color picker
 -- TODO replays
 -- TODO setting for resolution
 -- TODO mode to make split with pointer start/end pos
 -- TODO hide control panel
 -- TODO fullscreen
 -- TODO base colours on an image (specify how many colours to take from the image)
--- TODO hover over poly and get a color picker
 -- TODO? maybe probability histogram for hue and lightness?
 -- TODO brush to make colours more similar to the ones around them
 -- TODO brush size
@@ -103,6 +104,8 @@ component = H.mkComponent
         , draw_debug_lines: false
         , draw_pointer_crosshair: false
         , m_dialog_state: Nothing
+        , history_size: 0
+        , last_executed_command_idx: -1
         }
     , render
     , eval: H.mkEval $ H.defaultEval
@@ -128,6 +131,8 @@ type State =
     , draw_debug_lines :: Boolean
     , draw_pointer_crosshair :: Boolean
     , m_dialog_state :: Maybe Dialog_state
+    , history_size :: Int
+    , last_executed_command_idx :: Int
     }
 
 data Interaction_mode
@@ -142,8 +147,6 @@ newtype Params = Params
     , hue_delta :: Number_range -- [-0.5,0.5]
     , lightness_delta :: Number_range -- [-1,1]
     }
-
-type Number_range = { min :: Number, max :: Number }
 
 data Dialog_state
     = DS_interaction_mode_explanation Interaction_mode
@@ -160,9 +163,11 @@ data Explanation_depth = Simple | Nerdy
 
 type Child_slots =
     ( slider :: Slider.Slot String -- id
+    , hue_delta_explanation :: HueDeltaExplanation.Slot Unit
     )
 
 _slider = SProxy :: SProxy "slider"
+_hue_delta_explanation = SProxy :: SProxy "hue_delta_explanation"
 
 -------------------------------------------------------------------------------
 -- Render ---------------------------------------------------------------------
@@ -228,7 +233,7 @@ render_control_panel st = HH.div
                         ]
                     , HH.text $ print_interaction_mode im
                     ]
-                , help_btn \e -> Set_dialog_state e $ Just $ DS_interaction_mode_explanation im
+                , help_btn \_ -> Set_dialog_state $ Just $ DS_interaction_mode_explanation im
                 ]
         }
     , render_params st
@@ -249,12 +254,13 @@ render_params st@{ params: Params params } =
     in HH.div_ $
     (if hide_cut_params then [] else
         [ render_control_panel_section
-            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_n_cuts_per_tick_explanation
+            { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_n_cuts_per_tick_explanation
             , title: "# cuts per tick (" <> show params.n_cuts_per_tick <> ")"
             , children:
                 [ HH.slot _slider "n_cuts_per_tick_slider" Slider.component
                     { id: "n_cuts_per_tick_slider"
                     , start: [ Int.toNumber params.n_cuts_per_tick ]
+                    , show_pips: true
                     , range:
                         [ { k: "min", v: 1.0, step: 1.0 }
                         , { k: "max", v: 30.0, step: 1.0 }
@@ -270,14 +276,16 @@ render_params st@{ params: Params params } =
                 ]
             }
         , render_control_panel_section
-            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just $ DS_cut_ratio_explanation Simple
+            { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just $ DS_cut_ratio_explanation Simple
             , title: "Cut ratio (" <> (format_as_percentage $ const 0).to params.cut_ratio <> ")"
             , children:
                 [ HH.slot _slider "cut_ratio_slider" Slider.component
                     { id: "cut_ratio_slider"
                     , start: [ params.cut_ratio ]
+                    , show_pips: true
                     , range:
                         [ { k: "min", v: 0.0, step: 0.01 }
+                        , { k: "50%", v: 0.25, step: 0.01 }
                         , { k: "max", v: 0.5, step: 0.01 }
                         ]
                     , format: format_as_percentage $ const 0
@@ -292,12 +300,13 @@ render_params st@{ params: Params params } =
     <>
     (if hide_col_and_lightness_params then [] else
         [ render_control_panel_section
-            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_hue_delta_explanation
+            { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_hue_delta_explanation
             , title: "Colour change " <> render_range n_decimal_places_for_hue_and_lightness params.hue_delta
             , children:
                 [ HH.slot _slider "hue_delta_slider" Slider.component
                     { id: "hue_delta_slider"
                     , start: [ params.hue_delta.min, params.hue_delta.max ]
+                    , show_pips: true
                     , range:
                         [ { k: "min", v: -0.5, step: 0.001 }
                         , { k: "25%", v: -0.001, step: 0.00001 }
@@ -314,12 +323,13 @@ render_params st@{ params: Params params } =
                 ]
             }
         , render_control_panel_section
-            { m_on_help_clicked: Just \e -> Set_dialog_state e $ Just DS_lightness_delta_explanation
+            { m_on_help_clicked: Just \_ -> Set_dialog_state $ Just DS_lightness_delta_explanation
             , title: "Lightness change " <> render_range n_decimal_places_for_hue_and_lightness params.lightness_delta
             , children:
                 [ HH.slot _slider "lightness_delta_slider" Slider.component
                     { id: "lightness_delta_slider"
                     , start: [ params.lightness_delta.min, params.lightness_delta.max ]
+                    , show_pips: true
                     , range:
                         [ { k: "min", v: -0.5, step: 0.001 }
                         , { k: "25%", v: -0.001, step: 0.00001 }
@@ -337,21 +347,6 @@ render_params st@{ params: Params params } =
             }
         ]
     )
-
-n_decimal_places_for_hue_and_lightness :: Number -> Int
-n_decimal_places_for_hue_and_lightness n =
-    let absn = abs n
-    in if absn == 0.0 then 0
-    else if absn < 0.1 then 3
-    else if absn < 50.0 then 1
-    else 0
-
-render_range :: (Number -> Int) -> Number_range -> String
-render_range n_decimal_places r =
-    let format = format_as_percentage n_decimal_places
-        u = format.to r.min
-        v = format.to r.max
-    in "(" <> u <> ", " <> v <> ")"
 
 render_control_panel_section :: forall m.
     { m_on_help_clicked :: Maybe (MouseEvent -> Action)
@@ -382,12 +377,12 @@ help_btn on_click = HH.i
 button_bar :: forall m. Array (Html m) -> Html m
 button_bar btns = HH.span [ HP.classes [ ClassName "btn_bar" ] ] btns
 
-render_dialog :: forall m. State -> Html m
+render_dialog :: forall m. MonadAff m => State -> Html m
 render_dialog st = case st.m_dialog_state of
     Nothing -> HH.div_ []
     Just ds -> render_dialog_ st ds
 
-render_dialog_ :: forall m. State -> Dialog_state -> Html m
+render_dialog_ :: forall m. MonadAff m => State -> Dialog_state -> Html m
 render_dialog_ st ds =
     let cut_param_paragraphs =
             [ HH.p_
@@ -408,10 +403,12 @@ render_dialog_ st ds =
             ]
     in HH.div
     [ HP.id_ "dialog_wrapper"
-    , HE.onClick \e -> Just $ Set_dialog_state e Nothing
+    , HE.onClick \_ -> Just $ Set_dialog_state Nothing
     ]
     [ HH.div
-        [ HP.id_ "dialog" ]
+        [ HP.id_ "dialog"
+        , HE.onClick \e -> Just $ Dialog_NoOp e
+        ]
         [ HH.h3
             [ HP.id_ "dialog_header" ]
             [ HH.text case ds of
@@ -419,11 +416,11 @@ render_dialog_ st ds =
                 DS_n_cuts_per_tick_explanation -> "# cuts per tick"
                 DS_cut_ratio_explanation _ -> "Cut ratio"
                 DS_hue_delta_explanation -> "Colour change"
-                DS_lightness_delta_explanation -> "Lightness delta"
+                DS_lightness_delta_explanation -> "Lightness change"
             , HH.i
                 [ HP.classes $ map ClassName [ "fas", "fa-times", "close-btn" ]
                 , HP.tabIndex 0
-                , HE.onClick \e -> Just $ Set_dialog_state e Nothing
+                , HE.onClick \_ -> Just $ Set_dialog_state Nothing
                 ]
                 []
             ]
@@ -454,7 +451,7 @@ render_dialog_ st ds =
             DS_cut_ratio_explanation Simple ->
                 [ HH.p_ [ HH.text "How even the cut is." ]
                 , HH.p_ [ HH.text "Closer to 0% will make the cut less even, and closer to 50% will make the cut more even." ]
-                , HH.p_ [ HH.button [ HE.onClick \e -> Just $ Set_dialog_state e $ Just $ DS_cut_ratio_explanation Nerdy ] [ HH.text "Click for nerdy explanation" ] ]
+                , HH.p_ [ HH.button [ HE.onClick \_ -> Just $ Set_dialog_state $ Just $ DS_cut_ratio_explanation Nerdy ] [ HH.text "Click for nerdy explanation" ] ]
                 ]
 
             DS_cut_ratio_explanation Nerdy ->
@@ -480,10 +477,35 @@ render_dialog_ st ds =
                 ]
 
             DS_hue_delta_explanation ->
-                [
+                [ HH.div
+                    [ HP.classes [ ClassName "flex_center_h", ClassName "width100" ] ]
+                    [ HH.slot _hue_delta_explanation unit HueDeltaExplanation.component unit (const Nothing) ]
                 ]
 
-            DS_lightness_delta_explanation -> []
+            DS_lightness_delta_explanation ->
+                [ HH.p_
+                    [ HH.text "When a polygon is cut in two, the "
+                    , HH.b_ [ HH.text "lightness" ]
+                    , HH.text " of each sub-polygon is randomly selected from a range controlled by the "
+                    , HH.b_ [ HH.text "Lightness change" ]
+                    , HH.text " parameter."
+                    ]
+                , HH.p_
+                    [ HH.text "The lowest a polygon's brightness can be is "
+                    , HH.b_ [ HH.text "0%" ]
+                    , HH.text " (black), and the highest it can be is "
+                    , HH.b_ [ HH.text "100%" ]
+                    , HH.text " (white)."
+                    ]
+                , HH.p_
+                    [ HH.b_ [ HH.text "Tip: " ]
+                    , HH.text "If you find the polygons are becoming black or white very quickly, try bringing the slider range closer to "
+                    , HH.b_ [ HH.text "0%" ]
+                    , HH.text ". You could also try increasing the "
+                    , HH.b_ [ HH.text "Cut ratio" ]
+                    , HH.text "."
+                    ]
+                ]
         ]
     ]
 
@@ -507,7 +529,9 @@ data Action
     | Set_param Set_param_action
     | Save_as_png
     | Reset_canvas
-    | Set_dialog_state MouseEvent (Maybe Dialog_state)
+    | Dialog_NoOp MouseEvent
+    | Set_dialog_state (Maybe Dialog_state)
+    | Handle_history_add_command History_add_command_info
 
 data Set_param_action
     = Set_n_cuts_per_tick Int
@@ -529,10 +553,12 @@ handle_action = case _ of
         st <- H.get
         liftEffect $ set_pointer_is_down false
         liftEffect set_action_cut_poly_at_pointer
-        liftEffect init
+        liftEffect $ init { hsl_to_hex }
         liftEffect $ set_params st
 
         canvas_container <- liftEffect get_canvas_container_event_target
+        let f = history_add_command_listener \command -> Just $ Handle_history_add_command command
+        void $ H.subscribe $ eventListenerEventSource (EventType "history_add_command") canvas_container f
 
         -- subscribe to mouse events
         void $ H.subscribe $ eventListenerEventSource mousemove canvas_container \evt -> do
@@ -588,9 +614,17 @@ handle_action = case _ of
 
     Reset_canvas -> liftEffect reset_canvas
 
-    Set_dialog_state e m -> do
-        liftEffect $ stopPropagation $ ME.toEvent e
-        H.modify_ $ Lens.set (prop (SProxy :: SProxy "m_dialog_state")) m
+    Dialog_NoOp me -> do
+        let e = ME.toEvent me
+        liftEffect $ stopPropagation e
+        liftEffect $ preventDefault e
+
+    Set_dialog_state m -> H.modify_ $ Lens.set (prop (SProxy :: SProxy "m_dialog_state")) m
+
+    Handle_history_add_command info -> H.modify_ _
+        { history_size = info.history_size
+        , last_executed_command_idx = info.last_executed_command_idx
+        }
 
 handle_set_param_action :: forall m. MonadEffect m => Set_param_action -> M m Unit
 handle_set_param_action = case _ of
@@ -609,9 +643,15 @@ foreign import set_action_cut_largest_poly :: Effect Unit
 foreign import set_action_delete_poly_at_pointer :: Effect Unit
 foreign import set_action_change_poly_colour_at_pointer :: Effect Unit
 foreign import set_params :: State -> Effect Unit
-foreign import init :: Effect Unit
+foreign import init :: { hsl_to_hex :: Hsl_to_hex } -> Effect Unit
 foreign import reset_canvas :: Effect Unit
 foreign import save_as_png :: Effect Unit
+foreign import history_add_command_listener :: (History_add_command_info -> Maybe Action) -> (Event -> Maybe Action)
+
+type History_add_command_info =
+    { last_executed_command_idx :: Int
+    , history_size :: Int
+    }
 
 -------------------------------------------------------------------------------
 -- Lenses ---------------------------------------------------------------------
