@@ -53,8 +53,9 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- DONE fix debug lines for small areas
 -- DONE delete poly
 -- DONE add splash screen for first load
+-- DONE a few presets
 
--- TODO save presets
+-- TODO save own presets
 -- TODO undo/redo
 -- TODO add license
 -- TODO multitouch
