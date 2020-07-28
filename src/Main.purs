@@ -54,6 +54,7 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- DONE delete poly
 -- DONE add splash screen for first load
 -- DONE a few presets
+-- DONE mode to make split with pointer start/end pos
 
 -- TODO save own presets
 -- TODO undo/redo
@@ -66,7 +67,6 @@ import Web.UIEvent.MouseEvent.EventTypes (mousedown, mousemove, mouseup)
 -- TODO hover over poly and get a color picker
 -- TODO replays
 -- TODO setting for resolution
--- TODO mode to make split with pointer start/end pos
 -- TODO hide control panel
 -- TODO fullscreen
 -- TODO base colours on an image (specify how many colours to take from the image)
@@ -99,8 +99,6 @@ component = H.mkComponent
             , lightness_delta: { min: -0.0002, max: 0.0013 }
             }
         , interaction_mode: Cut_poly_at_pointer
-        , px_pct: 0.0
-        , py_pct: 0.0
         , pointer_is_down: false
         , draw_debug_lines: false
         , draw_pointer_crosshair: false
@@ -126,8 +124,6 @@ type Html m = H.ComponentHTML Action Child_slots m
 type State =
     { params :: Params
     , interaction_mode :: Interaction_mode
-    , px_pct :: Number
-    , py_pct :: Number
     , pointer_is_down :: Boolean
     , draw_debug_lines :: Boolean
     , draw_pointer_crosshair :: Boolean
@@ -141,6 +137,7 @@ data Interaction_mode
     | Cut_largest_poly
     | Delete_poly_at_pointer
     | Change_poly_colour_at_pointer
+    | Manual_cut
 
 newtype Params = Params
     { n_cuts_per_tick :: Int
@@ -236,6 +233,7 @@ render_control_panel st = HH.div
             , Cut_largest_poly
             , Delete_poly_at_pointer
             , Change_poly_colour_at_pointer
+            , Manual_cut
             ] # map \im -> HH.div
                 [ HP.class_ $ ClassName "interaction_mode_option" ]
                 [ HH.label_
@@ -260,11 +258,13 @@ render_params st@{ params: Params params } =
             Cut_largest_poly -> false
             Delete_poly_at_pointer -> true
             Change_poly_colour_at_pointer -> true
+            Manual_cut -> true
         hide_col_and_lightness_params = case st.interaction_mode of
             Cut_poly_at_pointer -> false
             Cut_largest_poly -> false
             Delete_poly_at_pointer -> true
             Change_poly_colour_at_pointer -> false
+            Manual_cut -> false
     in
     (if hide_cut_params then [] else
         [ render_control_panel_section
@@ -382,6 +382,15 @@ render_presets =
                     , lightness_delta: { min: 0.0, max: 0.001 }
                     }
                 , interaction_mode: Cut_poly_at_pointer
+                }
+            , Tuple "Stained glass"
+                { params: Params
+                    { n_cuts_per_tick: 10
+                    , cut_ratio: 0.5
+                    , hue_delta: { min: -0.0015, max: 0.0015 }
+                    , lightness_delta: { min: -0.02, max: 0.02 }
+                    }
+                , interaction_mode: Cut_largest_poly
                 }
             , Tuple "Rainbow"
                 { params: Params
@@ -536,6 +545,17 @@ render_dialog_ st ds =
                 , HH.text " parameter."
                 ]
 
+            DS_interaction_mode_explanation Manual_cut ->
+                [ HH.p_ [ HH.text "Drag a line across one or more polygons to cut them exactly at the line." ]
+                , HH.p_ [ HH.text "1. Touch anywhere on the canvas (or even start in the white area outside it)." ]
+                , HH.p_ [ HH.text "2. Start dragging across a polygon; anywhere the line crosses a polygon's edge, a circle will be drawn." ]
+                , HH.p_ [ HH.text "3. Release your mouse/touch. Any polygon that is completely crossed by the line will be cut." ]
+                , HH.p_
+                    [ HH.b_ [ HH.text "Tip: " ]
+                    , HH.text " If you want to cancel the cut, move your mouse/touch back to where it started and release. As long as no polygons are completely crossed, they won't be cut!"
+                    ]
+                ]
+
             DS_n_cuts_per_tick_explanation ->
                 [ HH.p_ [ HH.text "The number of times a new polygon is selected and cut each tick (there are roughly 60 ticks every second)." ]
                 , HH.p_ [ HH.b_ [ HH.text "TLDR:" ], HH.text " speed (the higher the number, the faster the cuts get made)." ]
@@ -640,6 +660,7 @@ print_interaction_mode = case _ of
     Cut_largest_poly -> "Cut largest poly"
     Delete_poly_at_pointer -> "Delete poly at pointer"
     Change_poly_colour_at_pointer -> "Change colour of poly at pointer"
+    Manual_cut -> "Manual cut"
 
 -------------------------------------------------------------------------------
 -- Action ---------------------------------------------------------------------
@@ -647,9 +668,9 @@ print_interaction_mode = case _ of
 
 data Action
     = Initialize
-    | Handle_pointer_move Int Int
     | Handle_pointer_down Int Int
-    | Handle_pointer_up
+    | Handle_pointer_move Int Int
+    | Handle_pointer_up Int Int
     | Set_interaction_mode Interaction_mode
     | Set_param Set_param_action
     | Save_as_png
@@ -677,8 +698,7 @@ handle_action :: forall m.
 handle_action = case _ of
     Initialize -> do
         st <- H.get
-        liftEffect $ set_pointer_is_down false
-        liftEffect set_action_cut_poly_at_pointer
+        liftEffect set_interaction_mode_cut_poly_at_pointer
         liftEffect $ init { hsl_to_hex }
         liftEffect $ set_params st
 
@@ -687,49 +707,41 @@ handle_action = case _ of
         void $ H.subscribe $ eventListenerEventSource (EventType "history_add_command") canvas_container f
 
         -- subscribe to mouse events
-        void $ H.subscribe $ eventListenerEventSource mousemove canvas_container \evt -> do
+        [ Tuple mousedown Handle_pointer_down
+        , Tuple mousemove Handle_pointer_move
+        , Tuple mouseup Handle_pointer_up
+        ] # traverse_ \(Tuple t action) -> void $ H.subscribe $ eventListenerEventSource t canvas_container \evt -> do
             mevt <- ME.fromEvent evt
-            pure $ Handle_pointer_move (ME.clientX mevt) (ME.clientY mevt)
-        void $ H.subscribe $ eventListenerEventSource mousedown canvas_container \evt -> do
-            mevt <- ME.fromEvent evt
-            pure $ Handle_pointer_down (ME.clientX mevt) (ME.clientY mevt)
-        void $ H.subscribe $ eventListenerEventSource mouseup canvas_container \_ -> Just Handle_pointer_up
+            pure $ action (ME.clientX mevt) (ME.clientY mevt)
 
         -- subscribe to touch events
-        void $ H.subscribe $ eventListenerEventSource touchmove canvas_container \evt -> do
+        [ Tuple touchstart Handle_pointer_down
+        , Tuple touchmove Handle_pointer_move
+        , Tuple touchend Handle_pointer_up
+        , Tuple touchcancel Handle_pointer_up
+        ] # traverse_ \(Tuple t action) -> void $ H.subscribe $ eventListenerEventSource t canvas_container \evt -> do
             tevt <- TE.fromEvent evt
             let changedTouches = TE.changedTouches tevt
             touch <- TL.item 0 changedTouches
-            pure $ Handle_pointer_move (T.clientX touch) (T.clientY touch)
-        void $ H.subscribe $ eventListenerEventSource touchstart canvas_container \evt -> do
-            tevt <- TE.fromEvent evt
-            let changedTouches = TE.changedTouches tevt
-            touch <- TL.item 0 changedTouches
-            pure $ Handle_pointer_down (T.clientX touch) (T.clientY touch)
-        void $ H.subscribe $ eventListenerEventSource touchend canvas_container \_ -> Just Handle_pointer_up
-        void $ H.subscribe $ eventListenerEventSource touchcancel canvas_container \_ -> Just Handle_pointer_up
-
-    Handle_pointer_move x y -> do
-        { px_pct, py_pct } <- liftEffect $ runFn2 update_px_py x y
-        H.modify_ _ { px_pct = Int.toNumber x, py_pct = Int.toNumber y }
+            pure $ action (T.clientX touch) (T.clientY touch)
 
     Handle_pointer_down x y -> do
-        { px_pct, py_pct } <- liftEffect $ runFn2 update_px_py x y
-        st <- H.get
-        liftEffect $ set_pointer_is_down true
-        H.put $ st { px_pct = Int.toNumber x, py_pct = Int.toNumber y, pointer_is_down = true }
+        liftEffect $ runFn2 pointer_down x y
 
-    Handle_pointer_up -> do
-        liftEffect $ set_pointer_is_down false
-        H.modify_ _ { pointer_is_down = false }
+    Handle_pointer_move x y -> do
+        liftEffect $ runFn2 pointer_move x y
+
+    Handle_pointer_up x y -> do
+        liftEffect $ runFn2 pointer_up x y
 
     Set_interaction_mode m -> do
         st <- H.modify $ Lens.set _interaction_mode m
         case st.interaction_mode of
-            Cut_poly_at_pointer -> liftEffect set_action_cut_poly_at_pointer
-            Cut_largest_poly -> liftEffect set_action_cut_largest_poly
-            Delete_poly_at_pointer -> liftEffect set_action_delete_poly_at_pointer
-            Change_poly_colour_at_pointer -> liftEffect set_action_change_poly_colour_at_pointer
+            Cut_poly_at_pointer -> liftEffect set_interaction_mode_cut_poly_at_pointer
+            Cut_largest_poly -> liftEffect set_interaction_mode_cut_largest_poly
+            Delete_poly_at_pointer -> liftEffect set_interaction_mode_delete_poly_at_pointer
+            Change_poly_colour_at_pointer -> liftEffect set_interaction_mode_change_poly_colour_at_pointer
+            Manual_cut -> liftEffect set_interaction_mode_manual_cut
 
     Set_param a -> do
         handle_set_param_action a
@@ -769,12 +781,14 @@ handle_set_param_action = case _ of
     Toggle_draw_pointer_crosshair -> H.modify_ $ Lens.over _draw_pointer_crosshair not
 
 foreign import get_canvas_container_event_target :: Effect EventTarget
-foreign import update_px_py :: Fn2 Int Int (Effect { px_pct :: Number, py_pct :: Number })
-foreign import set_pointer_is_down :: Boolean -> Effect Unit
-foreign import set_action_cut_poly_at_pointer :: Effect Unit
-foreign import set_action_cut_largest_poly :: Effect Unit
-foreign import set_action_delete_poly_at_pointer :: Effect Unit
-foreign import set_action_change_poly_colour_at_pointer :: Effect Unit
+foreign import pointer_down :: Fn2 Int Int (Effect Unit)
+foreign import pointer_move :: Fn2 Int Int (Effect Unit)
+foreign import pointer_up :: Fn2 Int Int (Effect Unit)
+foreign import set_interaction_mode_cut_poly_at_pointer :: Effect Unit
+foreign import set_interaction_mode_cut_largest_poly :: Effect Unit
+foreign import set_interaction_mode_delete_poly_at_pointer :: Effect Unit
+foreign import set_interaction_mode_change_poly_colour_at_pointer :: Effect Unit
+foreign import set_interaction_mode_manual_cut :: Effect Unit
 foreign import set_params :: State -> Effect Unit
 foreign import init :: { hsl_to_hex :: Hsl_to_hex } -> Effect Unit
 foreign import reset_canvas :: Effect Unit
